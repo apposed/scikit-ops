@@ -32,6 +32,7 @@ from qtpy.QtWidgets import (
 
 from CellposeMagicGuiCommand import CellposeCommand
 from SkImageSegmenterMagicGuiCommand import OtsuCommand
+from StardistMagicGuiCommand import StardistCommand
 
 
 class SegmenterSwitcherPanel(QWidget):
@@ -45,6 +46,7 @@ class SegmenterSwitcherPanel(QWidget):
         self._commands = {
             OtsuCommand.NAME: OtsuCommand(),
             CellposeCommand.NAME: CellposeCommand(),
+            StardistCommand.NAME: StardistCommand(),
         }
 
         layout = QVBoxLayout(self)
