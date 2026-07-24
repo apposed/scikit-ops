@@ -1,0 +1,55 @@
+[workspace]
+name = "stardist_napari_ai_lab"
+authors = ["bnorthan <bnorthan@gmail.com>"]
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
+version = "0.1.0"
+
+[system-requirements]
+cuda = "12.0"
+
+[dependencies]
+# python = "3.11.*"  # Moved to platform-specific sections below
+napari = "*"
+pyqt = "*"
+ipykernel = "*"
+
+[target.linux-64.dependencies]
+python = "3.11.*"
+__cuda = "*"  # This forces conda to select CUDA-enabled builds instead of CPU builds
+tensorflow = { version = ">=2.0", build = "cuda*" }  # Explicitly request CUDA build of TensorFlow
+stardist = "*"  # After tensorflow to prevent PyPI override
+cudnn = "*"
+cudatoolkit = "*"
+
+[target.osx-arm64.dependencies]
+python = "3.11.*"
+
+[target.win-64.dependencies]
+python = "3.10.*"  # Python 3.10 for Windows (TensorFlow compatibility)
+stardist = "*"
+cudatoolkit = "11.8.*"
+cudnn = "8.1.0.*"
+
+[pypi-dependencies]
+appose = "*"
+PyQt5 = "*"
+albumentations = "*"
+
+#napari-ai-lab = { git = "https://github.com/True-North-Intelligent-Algorithms/napari-ai-lab" }
+# comment this in if you want to local editable install
+napari-ai-lab = { path = "../../../napari-ai-lab", editable=true}
+
+czifile = "*"
+bioio-czi = "*"
+pytest = "*"
+ndevio = "*"
+
+# tensorflow needs to be below 2.11 for GPU support on windows
+# Windows uses PyPI tensorflow because conda-forge doesn't have Windows builds
+[target.win-64.pypi-dependencies]
+tensorflow = "<2.11"
+
+[tasks]
+# Register the environment as a Jupyter kernel for use in VS Code and Jupyter
+register-kernel = "python -m ipykernel install --user --name=stardist --display-name 'AI-LAB (stardist)'"

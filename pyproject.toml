@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "naplari-hacking"
+version = "0.1.0"
+description = "napari + cellpose hacking utilities"
+requires-python = ">=3.10"
+
+[tool.hatch.build.targets.wheel]
+packages = ["magicgui"]
