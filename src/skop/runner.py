@@ -71,6 +71,36 @@ class Runner:
         self.debug = debug
         self._services: dict[tuple, Any] = {}
         self._envs: dict[tuple, Any] = {}
+        self._build_progress: list[Callable[[str, int, int], None]] = []
+        self._build_output: list[Callable[[str], None]] = []
+        self._build_error: list[Callable[[str], None]] = []
+
+    # -- build reporting -------------------------------------------------
+
+    def subscribe_build_progress(
+        self, subscriber: Callable[[str, int, int], None]
+    ) -> None:
+        """Hear about environment build progress, as (title, current, maximum).
+
+        Building an environment is by far the slowest thing a first run does
+        -- minutes, for a TensorFlow or PyTorch stack -- and it happens inside
+        ``run``, with nothing else to show for it. Anything with a progress
+        bar wants these.
+        """
+        self._build_progress.append(subscriber)
+
+    def subscribe_build_output(self, subscriber: Callable[[str], None]) -> None:
+        """Hear the build tool's standard output, in raw chunks."""
+        self._build_output.append(subscriber)
+
+    def subscribe_build_error(self, subscriber: Callable[[str], None]) -> None:
+        """Hear the build tool's standard error, in raw chunks.
+
+        Note: this is the stderr *stream*, not a failure report. Pixi writes
+        its solver and download progress there, so most of what arrives is
+        routine. A build that actually fails raises from ``run`` instead.
+        """
+        self._build_error.append(subscriber)
 
     # -- environments ----------------------------------------------------
 
@@ -103,6 +133,12 @@ class Runner:
 
         config = self.env_config(env_id)
         builder = appose.pixi(config).name(f"skop-{env_id}")
+        for progress_subscriber in self._build_progress:
+            builder = builder.subscribe_progress(progress_subscriber)
+        for output_subscriber in self._build_output:
+            builder = builder.subscribe_output(output_subscriber)
+        for error_subscriber in self._build_error:
+            builder = builder.subscribe_error(error_subscriber)
         if self.debug:
             builder = builder.log_debug()
         env = builder.build()

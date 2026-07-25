@@ -174,6 +174,21 @@ with skop.Runner() as runner:
 The first run of an environment builds it, which takes a while. Later runs
 reuse it, since Appose keys environments by name.
 
+Because that build happens inside `run()`, a caller with a progress bar can
+subscribe to it:
+
+```python
+runner.subscribe_build_progress(lambda title, current, maximum: ...)
+runner.subscribe_build_output(lambda text: ...)
+runner.subscribe_build_error(lambda text: ...)
+```
+
+These pass straight through to Appose's builder, and carry less than their
+names suggest: `build_error` is the build tool's stderr *stream*, where pixi
+writes ordinary status including its success message, and `build_progress`
+fires only while downloading the build tool itself. A build that actually
+fails raises out of `run()`.
+
 ## Development
 
 ```sh

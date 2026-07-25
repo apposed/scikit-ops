@@ -91,6 +91,46 @@ def test_on_start_hands_back_a_cancellable_task(runner):
     assert 0.0 < total < 100.0
 
 
+def test_build_subscribers_are_handed_to_the_builder(monkeypatch):
+    # Building is the slow part of a first run, and it happens inside run(),
+    # so anything with a progress bar needs these to reach Appose. Checked
+    # against a fake builder rather than by building for real.
+    import appose
+
+    recorded: dict[str, list] = {"progress": [], "output": [], "error": []}
+
+    class FakeBuilder:
+        def name(self, _env_name):
+            return self
+
+        def subscribe_progress(self, sub):
+            recorded["progress"].append(sub)
+            return self
+
+        def subscribe_output(self, sub):
+            recorded["output"].append(sub)
+            return self
+
+        def subscribe_error(self, sub):
+            recorded["error"].append(sub)
+            return self
+
+        def build(self):
+            return "an environment"
+
+    monkeypatch.setattr(appose, "pixi", lambda _config: FakeBuilder())
+
+    r = skop.Runner()
+    r.subscribe_build_progress(lambda title, current, maximum: None)
+    r.subscribe_build_output(lambda text: None)
+    r.subscribe_build_error(lambda text: None)
+
+    assert r.environment("minimal") == "an environment"
+    assert len(recorded["progress"]) == 1
+    assert len(recorded["output"]) == 1
+    assert len(recorded["error"]) == 1
+
+
 def test_unknown_argument_is_rejected_before_dispatch(runner):
     with pytest.raises(TypeError, match="has no parameter"):
         runner.run(toy.add, a=1, b=2, c=3)
