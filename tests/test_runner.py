@@ -72,6 +72,25 @@ def test_progress_events_reach_the_host(runner):
     assert any(m and "Summing chunk" in m for m in messages)
 
 
+def test_on_start_hands_back_a_cancellable_task(runner):
+    import threading
+
+    # run() blocks, so a GUI's Cancel button only has something to press if
+    # it gets the task from another thread. slow_sum polls cancel_requested()
+    # and returns what it summed before being stopped.
+    def cancel_soon(task):
+        threading.Timer(0.3, task.cancel).start()
+
+    total = runner.run(
+        toy.slow_sum,
+        image=np.ones((10, 10), dtype=np.float32),
+        steps=40,
+        on_start=cancel_soon,
+    )
+    # A canceled op still delivers its outputs -- they are simply partial.
+    assert 0.0 < total < 100.0
+
+
 def test_unknown_argument_is_rejected_before_dispatch(runner):
     with pytest.raises(TypeError, match="has no parameter"):
         runner.run(toy.add, a=1, b=2, c=3)

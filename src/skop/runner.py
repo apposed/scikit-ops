@@ -154,6 +154,7 @@ class Runner:
         *,
         variant: str | None = None,
         on_progress: Callable[[Any], None] | None = None,
+        on_start: Callable[[Any], None] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run an op in its environment and return its result.
@@ -165,6 +166,11 @@ class Runner:
                 this method's own parameters.
             variant: Optional named pixi sub-environment (e.g. ``"cuda"``).
             on_progress: Called with each Appose TaskEvent as it arrives.
+            on_start: Called with the Appose Task once it has been submitted.
+                This call blocks until the op finishes, so a caller wanting to
+                cancel one -- a GUI, typically -- needs a handle on it from
+                another thread. Waiting for the first progress event instead
+                would leave silent ops uncancellable.
         """
         spec = _spec.spec(fn)
         call_args = dict(args or {})
@@ -200,6 +206,8 @@ class Runner:
             )
             if on_progress is not None:
                 task.listen(on_progress)
+            if on_start is not None:
+                on_start(task)
             task.wait_for()
 
             for caller_array, nda in buffers.values():
