@@ -1,0 +1,23 @@
+[workspace]
+name = "opkit-unseg-cv"
+description = "UNSEG's stack: an older scikit-image, scikit-learn and OpenCV."
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64", "linux-aarch64", "win-64"]
+version = "0.1.0"
+
+# Pins are inherited from unseg-fiji, where the algorithm is known to produce
+# correct results. They are old enough that this env can share nothing with
+# the others -- which is precisely why environments are per-stack.
+
+[dependencies]
+python = "3.9.*"
+numpy = "==1.24.3"
+scipy = "==1.9.1"
+scikit-image = "==0.20.0"
+scikit-learn = "==1.2.2"
+# NB: unseg-fiji pinned appose 0.7.2, but opkit's worker adapter needs the
+# service init script support added later.
+appose = ">=0.11"
+
+[pypi-dependencies]
+opencv-python-headless = "==4.7.0.72"

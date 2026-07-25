@@ -37,6 +37,7 @@ __all__ = [
     "ParamSpec",
     "Runner",
     "cancel_requested",
+    "discover",
     "is_op",
     "op",
     "progress",
@@ -44,7 +45,7 @@ __all__ = [
     "spec",
 ]
 
-_LAZY = {"Runner": "runner", "run": "runner"}
+_LAZY = {"Runner": "runner", "run": "runner", "discover": "discovery"}
 
 
 def __getattr__(name: str) -> Any:

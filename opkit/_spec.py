@@ -7,9 +7,10 @@ worker environment, so it must depend on nothing beyond the standard library.
 from __future__ import annotations
 
 import inspect
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Annotated, Any, get_args, get_origin
+from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
 
 class _Direction:
@@ -176,7 +177,8 @@ def spec(fn: Callable) -> OpSpec:
     if not isinstance(config, _OpConfig):
         raise TypeError(f"Not an op: {fn!r} (missing @op decorator)")
 
-    signature = inspect.signature(fn, eval_str=True)
+    signature = inspect.signature(fn)
+    hints = _resolve_hints(fn)
 
     params = []
     for name, param in signature.parameters.items():
@@ -184,13 +186,14 @@ def spec(fn: Callable) -> OpSpec:
             raise TypeError(
                 f"Op {fn.__qualname__} may not declare *args or **kwargs: {name}"
             )
+        annotation = hints.get(name, param.annotation)
         params.append(
             ParamSpec(
                 name=name,
-                type=_strip(param.annotation),
+                type=_strip(annotation),
                 default=param.default,
-                direction=direction_of(param.annotation),
-                ui=_ui_hints(param.annotation),
+                direction=direction_of(annotation),
+                ui=_ui_hints(annotation),
             )
         )
 
@@ -208,8 +211,30 @@ def spec(fn: Callable) -> OpSpec:
         exclusive=config.exclusive,
         form=form,
         params=tuple(params),
-        return_type=_strip(signature.return_annotation),
+        return_type=_strip(hints.get("return", signature.return_annotation)),
         doc=inspect.getdoc(fn),
     )
     fn.__opkit_spec__ = result
     return result
+
+
+def _resolve_hints(fn: Callable) -> dict:
+    """Evaluate a function's annotations, which may be strings.
+
+    ``from __future__ import annotations`` turns every annotation into a
+    string, and op modules use it. Resolution happens through
+    ``get_type_hints`` rather than ``inspect.signature(eval_str=True)``
+    because the latter needs Python 3.10, while an environment is free to
+    pin an older one -- UNSEG's pins it to 3.9.
+    """
+    try:
+        return get_type_hints(fn, include_extras=True)
+    except Exception as exc:
+        raise TypeError(
+            f"Could not resolve the annotations of op {fn.__qualname__} "
+            f"under Python {sys.version_info.major}.{sys.version_info.minor}: "
+            f"{type(exc).__name__}: {exc}\n"
+            "An op's annotations are evaluated in the environment it runs in, "
+            "so they must be valid there -- note that 'X | Y' unions need "
+            "Python 3.10."
+        ) from exc

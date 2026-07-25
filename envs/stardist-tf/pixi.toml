@@ -1,0 +1,81 @@
+[workspace]
+name = "opkit-stardist-tf"
+description = "StarDist on TensorFlow, in 2D and 3D."
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64", "win-64"]
+version = "0.1.0"
+
+# Shared by ops/stardist2d.py and ops/starfun3d.py: same stack, one build.
+#
+# The per-platform TensorFlow split is inherited from starfun3d, where it is
+# known to work. TF 2.10 is the last release with GPU support on Windows, and
+# Apple Silicon needs the tensorflow-macos/tensorflow-metal pair rather than
+# plain tensorflow.
+
+[dependencies]
+python = "==3.10"
+numpy = "<2"
+scipy = "*"
+pip = "*"
+appose = ">=0.11"
+# NB: stardist 0.9.1 imports pkg_resources, which setuptools dropped in 81.
+setuptools = "<81"
+
+[pypi-dependencies]
+stardist = "==0.9.1"
+csbdeep = "*"
+
+[target.osx-64.dependencies]
+python = "==3.10"
+
+[target.osx-arm64.dependencies]
+# NB: inherited from starfun3d, which leaves Python unpinned here so the
+# resolver can pick whatever tensorflow-macos currently ships wheels for.
+# In practice that means Apple Silicon runs a newer Python than the other
+# platforms -- 3.12 with TF 2.16, rather than 3.10 with TF 2.10.
+python = "*"
+
+[target.win-64.pypi-dependencies]
+tensorflow = "==2.10.1"
+
+[target.linux-64.pypi-dependencies]
+tensorflow = "==2.10.1"
+
+[target.osx-64.pypi-dependencies]
+tensorflow = "*"
+
+[target.osx-arm64.pypi-dependencies]
+tensorflow-macos = "*"
+tensorflow-metal = "*"
+
+# Variant: Apple Silicon without the Metal plugin, which some models trip over.
+[feature.nometal]
+channels = ["conda-forge"]
+
+[feature.nometal.target.osx-arm64.pypi-dependencies]
+tensorflow = "*"
+
+# Variant: CUDA acceleration on Windows and Linux.
+[feature.cuda]
+channels = ["nvidia", "conda-forge"]
+
+[feature.cuda.target.win-64.dependencies]
+cudatoolkit = "11.2.*"
+cudnn = "8.1.*"
+
+[feature.cuda.target.linux-64.dependencies]
+cudatoolkit = "11.2.*"
+cudnn = "8.1.*"
+
+[feature.cuda.target.win-64.activation.env]
+PATH = "%CONDA_PREFIX%\\Library\\bin;%PATH%"
+
+[feature.cuda.target.linux-64.activation.env]
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+
+# NB: Only 'default' is installed on build. The others are materialized on
+# demand, via Runner.run(..., variant="cuda"), which needs appose >= 0.12.
+[environments]
+default = { solve-group = "default" }
+cuda = { features = ["cuda"], solve-group = "default" }
+nometal = { features = ["nometal"], solve-group = "default" }

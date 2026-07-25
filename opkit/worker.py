@@ -11,6 +11,8 @@ and turn the return value back into Appose outputs.
 from __future__ import annotations
 
 import importlib
+from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from . import _codec, _progress, _spec
@@ -36,7 +38,7 @@ def invoke(task: Any, module: str, function: str, kwargs: dict) -> dict:
     refs: list = []
     outbound: list = []
     try:
-        args = _codec.decode(kwargs, refs)
+        args = _coerce(spec, _codec.decode(kwargs, refs))
         _check_args(spec, args)
 
         token = _progress._bind(task)
@@ -50,6 +52,27 @@ def invoke(task: Any, module: str, function: str, kwargs: dict) -> dict:
         # Release our mappings of the host's shared memory. Per Appose's
         # rule, only the host process unlinks; we merely close our view.
         _codec.release(refs, unlink=False)
+
+
+def _coerce(spec: _spec.OpSpec, args: dict) -> dict:
+    """Rebuild the rich argument types that JSON flattened in transit.
+
+    An Enum travels as its value and a Path as a string, so an op called
+    remotely would otherwise receive something different from what an op
+    called directly receives. The declared parameter types say how to put
+    them back.
+    """
+    for param in spec.params:
+        if param.name not in args:
+            continue
+        value = args[param.name]
+        declared = param.type
+        if isinstance(declared, type) and issubclass(declared, Enum):
+            if not isinstance(value, declared):
+                args[param.name] = declared(value)
+        elif declared is Path and not isinstance(value, Path):
+            args[param.name] = Path(value)
+    return args
 
 
 def _check_args(spec: _spec.OpSpec, args: dict) -> None:

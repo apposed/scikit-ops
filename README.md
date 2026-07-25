@@ -21,6 +21,30 @@ Environments are keyed by ID, and several ops may declare the same one. Ops
 sharing an environment also share a warm worker process, unless one asks for
 `exclusive=True`.
 
+## What's here
+
+| Op | Environment | Does |
+| --- | --- | --- |
+| `ops.otsu:otsu` | `skimage` | Otsu thresholding |
+| `ops.cellpose:cellpose` | `cellpose` | Cellpose segmentation |
+| `ops.stardist2d:stardist2d` | `stardist-tf` | StarDist 2D, pretrained |
+| `ops.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
+| `ops.starfun3d:synthetic_nuclei` | `skimage` | Synthetic 3D test volume |
+| `ops.unseg:unseg` | `unseg-cv` | Unsupervised nuclei + cells |
+| `ops.toy:*` | `minimal` | Exercises for opkit itself |
+
+`stardist2d` and `segment_nuclei` share one TensorFlow build and one warm
+worker — the point of naming environments rather than tying them to ops.
+`unseg-cv` shares nothing with anything: it pins Python 3.9, numpy 1.24 and an
+old scikit-image, which is exactly why it needs an environment of its own.
+
+To list what the collection currently offers:
+
+```python
+import opkit
+specs, failures = opkit.discover()
+```
+
 ## Writing an op
 
 ```python

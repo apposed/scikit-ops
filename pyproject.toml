@@ -27,6 +27,8 @@ packages = ["opkit", "src/imgops"]
 
 [tool.ruff]
 line-length = 88
+# Vendored upstream algorithm: keep it diffable against its source.
+extend-exclude = ["ops/unseg/_algorithm.py"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["opkit", "ops"]

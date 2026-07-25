@@ -76,3 +76,17 @@ def probe() -> str:
     import sys
 
     return f"{sys.executable} | py={sys.version.split()[0]} | numpy={np.__version__}"
+
+
+class Findings(NamedTuple):
+    labels: np.ndarray
+    points: np.ndarray
+
+
+@op(env="minimal")
+def find_nothing(image: np.ndarray) -> Findings:
+    """Return an empty result, as a segmentation that finds nothing would."""
+    return Findings(
+        labels=np.zeros_like(image, dtype=np.uint16),
+        points=np.zeros((0, 3), dtype=np.int32),
+    )

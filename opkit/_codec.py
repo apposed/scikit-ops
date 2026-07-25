@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from appose import NDArray
+from appose import NDArray, SharedMemory
 
 # dtypes whose element size Appose can derive from the dtype name.
 _UNSUPPORTED_HINT = (
@@ -71,7 +71,15 @@ def decode(value: Any, refs: list) -> Any:
 def _to_ndarray(array: np.ndarray, refs: list) -> NDArray:
     dtype = str(array.dtype)
     _check_dtype(dtype)
-    nda = NDArray(dtype, list(array.shape))
+    shape = list(array.shape)
+    if array.size == 0:
+        # A shared memory block must have a positive size, but an empty result
+        # is ordinary -- a segmentation that finds nothing returns one. Carry
+        # the shape and dtype over a token block; numpy is happy to view zero
+        # elements of it.
+        nda = NDArray(dtype, shape, SharedMemory(create=True, rsize=1))
+    else:
+        nda = NDArray(dtype, shape)
     refs.append(nda)
     # The one unavoidable copy: an arbitrary array is not already in shared
     # memory. Callers who allocate via opkit can skip it.
