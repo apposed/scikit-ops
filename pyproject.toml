@@ -4,8 +4,32 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scikit-ops"
-version = "0.1.0"
-description = "Appose-powered ops, and the machinery for running them"
+version = "0.1.0.dev0"
+description = "Appose-powered ops, and the machinery for running them."
+license = "BSD-2-Clause"
+authors = [{name = "scikit-ops developers"}]
+readme = "README.md"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: Unix",
+    "Operating System :: MacOS",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+
 requires-python = ">=3.10"
 dependencies = [
     "appose>=0.11",
@@ -21,6 +45,13 @@ dev = [
     "toml",
     "validate-pyproject[all]",
 ]
+
+[project.urls]
+homepage = "https://github.com/apposed/scikit-ops"
+documentation = "https://github.com/apposed/scikit-ops/blob/main/README.md"
+source = "https://github.com/apposed/scikit-ops"
+download = "https://pypi.org/project/scikit-ops"
+tracker = "https://github.com/apposed/appose/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/skop"]
