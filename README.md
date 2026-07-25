@@ -183,11 +183,19 @@ runner.subscribe_build_output(lambda text: ...)
 runner.subscribe_build_error(lambda text: ...)
 ```
 
-These pass straight through to Appose's builder, and carry less than their
-names suggest: `build_error` is the build tool's stderr *stream*, where pixi
-writes ordinary status including its success message, and `build_progress`
-fires only while downloading the build tool itself. A build that actually
-fails raises out of `run()`.
+These pass straight through to Appose's builder. Progress titles name the
+phase — `Solving`, `Installing conda packages`, `Downloading PyPI packages`,
+`Installing PyPI packages`, `Done` — and come with a real denominator.
+
+Two things worth knowing. Subscribing to progress is what *enables* it:
+Appose's `PixiInstallMonitor` runs pixi under `-vv` to read its phase
+transitions, and only wires up when a progress subscriber exists. And
+`build_error` is the stderr *stream* rather than a failure report — pixi
+writes its ordinary status there, and under `-vv` its whole debug log as
+well. A build that actually fails raises out of `run()`.
+
+This needs Appose newer than 0.11, which is why `pyproject.toml` currently
+sources it from the main branch.
 
 ## Development
 

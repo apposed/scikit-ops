@@ -86,6 +86,13 @@ class Runner:
         -- minutes, for a TensorFlow or PyTorch stack -- and it happens inside
         ``run``, with nothing else to show for it. Anything with a progress
         bar wants these.
+
+        Titles come from Appose's PixiInstallMonitor, and name the phase:
+        "Solving", "Installing conda packages", "Downloading PyPI packages",
+        "Installing PyPI packages", "Done". Note that subscribing here is
+        what switches the monitor on -- it runs pixi under ``-vv`` to read
+        its phase transitions, so without a progress subscriber a build
+        reports only its final summary line.
         """
         self._build_progress.append(subscriber)
 
@@ -97,8 +104,9 @@ class Runner:
         """Hear the build tool's standard error, in raw chunks.
 
         Note: this is the stderr *stream*, not a failure report. Pixi writes
-        its solver and download progress there, so most of what arrives is
-        routine. A build that actually fails raises from ``run`` instead.
+        its ordinary status there, success message included, and once a
+        progress subscriber has turned on ``-vv`` it writes its whole debug
+        log there too. A build that actually fails raises from ``run``.
         """
         self._build_error.append(subscriber)
 
