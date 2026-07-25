@@ -1,9 +1,9 @@
 """
-Experiment: StarDist segmenter as a magicgui @guiclass "command".
+StarDist segmenter as a magicgui @guiclass "command".
 
-Minimal stand-in for the dataclass-based StardistSegmenter -- 2D only,
-pretrained models only, no training.  Uses magicgui's ``@guiclass`` so
-the parameter GUI is generated automatically.
+if depenendencies available runs stardist implementation directory.
+
+otherwise falls back to running stardist via appose and a default stardist environment
 
 Exposes the same tiny interface as the other experiment commands:
 * ``.gui``            -- auto-generated magicgui Container widget.
