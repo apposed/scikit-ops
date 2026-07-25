@@ -5,8 +5,30 @@ build-backend = "hatchling.build"
 [project]
 name = "naplari-hacking"
 version = "0.1.0"
-description = "napari + cellpose hacking utilities"
+description = "Appose-powered ops, and the machinery for running them"
 requires-python = ">=3.10"
+dependencies = [
+    "appose>=0.11",
+    "numpy",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/imgops"]
+packages = ["opkit", "src/imgops"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint.isort]
+known-first-party = ["opkit", "ops"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
