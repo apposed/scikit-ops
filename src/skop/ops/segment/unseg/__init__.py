@@ -19,6 +19,7 @@ from typing import Annotated, NamedTuple
 import numpy as np
 
 from skop import op, progress
+from skop.types import ImageData, LabelsData
 
 
 class DistanceTransform(Enum):
@@ -36,15 +37,15 @@ class TernaryMethod(Enum):
 
 
 class Segmentation(NamedTuple):
-    nuclei: np.ndarray
-    cells: np.ndarray
+    nuclei: LabelsData
+    cells: LabelsData
     n_nuclei: int
     n_cells: int
 
 
 @op(env="unseg-cv")
 def unseg(
-    image: np.ndarray,
+    image: ImageData,
     channel_axis: int = 0,
     nuclei_channel: int = 2,
     membrane_channel: int = 0,

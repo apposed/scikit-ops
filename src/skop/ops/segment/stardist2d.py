@@ -12,6 +12,7 @@ from typing import Annotated
 import numpy as np
 
 from skop import op, progress
+from skop.types import ImageData, LabelsData
 
 from .._util import to_gray
 
@@ -25,7 +26,7 @@ class PretrainedModel(Enum):
 
 @op(env="stardist-tf")
 def stardist2d(
-    image: np.ndarray,
+    image: ImageData,
     model: PretrainedModel = PretrainedModel.fluo,
     prob_thresh: Annotated[
         float,
@@ -36,7 +37,7 @@ def stardist2d(
         {"widget_type": "FloatSlider", "min": 0.0, "max": 1.0, "step": 0.05},
     ] = 0.4,
     normalize: bool = True,
-) -> np.ndarray:
+) -> LabelsData:
     """Detect objects in a 2D image with a pretrained StarDist model.
 
     Args:

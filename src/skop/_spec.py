@@ -10,7 +10,33 @@ import inspect
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
+
+
+class Role(Enum):
+    """What a value *means*, beyond what its Python type says.
+
+    Every op here passes ``np.ndarray`` around, but a front end needs to know
+    whether a given array is a picture, a label image or a set of coordinates
+    to display it correctly. The type cannot say so; this can.
+
+    The vocabulary deliberately mirrors napari's layer types, so that mapping
+    a role onto a napari type is a lookup rather than a judgement call. It is
+    not napari-specific: a magicgui-only front end maps roles onto widgets,
+    and Fiji maps them onto ImgLib2 types.
+
+    Roles are attached through ``skop.types``, or directly with
+    ``Annotated[T, Role.<name>]`` for a role having no alias.
+    """
+
+    image = "image"
+    labels = "labels"
+    points = "points"
+    shapes = "shapes"
+    surface = "surface"
+    tracks = "tracks"
+    vectors = "vectors"
 
 
 class _Direction:
@@ -63,6 +89,14 @@ def direction_of(annotation: Any) -> _Direction | None:
     return None
 
 
+def role_of(annotation: Any) -> Role | None:
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, Role):
+                return meta
+    return None
+
+
 def _strip(annotation: Any) -> Any:
     """Return the underlying type of a possibly-Annotated annotation."""
     return (
@@ -87,10 +121,20 @@ class ParamSpec:
     default: Any
     direction: _Direction | None
     ui: dict = field(default_factory=dict)
+    role: Role | None = None
 
     @property
     def required(self) -> bool:
         return self.default is inspect.Parameter.empty
+
+
+@dataclass(frozen=True)
+class OutputSpec:
+    """One of an op's outputs, as a front end needs to see it."""
+
+    name: str
+    type: Any
+    role: Role | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +149,7 @@ class OpSpec:
     params: tuple[ParamSpec, ...]
     return_type: Any
     doc: str | None
+    return_role: Role | None = None
 
     @property
     def inputs(self) -> tuple[ParamSpec, ...]:
@@ -112,7 +157,11 @@ class OpSpec:
 
     @property
     def outputs(self) -> tuple[str, ...]:
-        """Names of this op's outputs, in declaration order."""
+        """Names of this op's outputs, in declaration order.
+
+        This is the wire view, used on both sides of the Appose boundary to
+        label task outputs. Front ends want ``output_specs`` instead.
+        """
         out_params = tuple(p.name for p in self.params if p.direction is OUT)
         if out_params:
             return out_params
@@ -124,6 +173,28 @@ class OpSpec:
             # NamedTuple return: one output per field.
             return tuple(fields)
         return () if self.return_type in (None, type(None)) else ("result",)
+
+    @property
+    def output_specs(self) -> tuple[OutputSpec, ...]:
+        """This op's outputs, with their types and roles."""
+        names = self.outputs
+        if not names:
+            return ()
+        if self.form != FUNCTION:
+            # Results land in parameters the caller supplied.
+            by_name = {p.name: p for p in self.params}
+            return tuple(
+                OutputSpec(name, by_name[name].type, by_name[name].role)
+                for name in names
+            )
+        if names == ("result",):
+            return (OutputSpec("result", self.return_type, self.return_role),)
+        # NamedTuple return: each field carries its own annotation.
+        hints = _field_hints(self.return_type)
+        return tuple(
+            OutputSpec(name, _strip(hints.get(name)), role_of(hints.get(name)))
+            for name in names
+        )
 
 
 @dataclass(frozen=True)
@@ -194,6 +265,7 @@ def spec(fn: Callable) -> OpSpec:
                 default=param.default,
                 direction=direction_of(annotation),
                 ui=_ui_hints(annotation),
+                role=role_of(annotation),
             )
         )
 
@@ -202,6 +274,7 @@ def spec(fn: Callable) -> OpSpec:
         raise TypeError(f"Op {fn.__qualname__} mixes Out and Mut params; pick one form")
     form = COMPUTER if OUT in directions else INPLACE if MUT in directions else FUNCTION
 
+    return_annotation = hints.get("return", signature.return_annotation)
     result = OpSpec(
         name=f"{fn.__module__}:{fn.__name__}",
         module=fn.__module__,
@@ -211,11 +284,24 @@ def spec(fn: Callable) -> OpSpec:
         exclusive=config.exclusive,
         form=form,
         params=tuple(params),
-        return_type=_strip(hints.get("return", signature.return_annotation)),
+        return_type=_strip(return_annotation),
         doc=inspect.getdoc(fn),
+        return_role=role_of(return_annotation),
     )
     fn.__skop_spec__ = result
     return result
+
+
+def _field_hints(return_type: Any) -> dict:
+    """Resolve a NamedTuple's field annotations, for their roles.
+
+    Unlike an op's own annotations, these are optional: an unresolvable field
+    annotation costs a role, not a usable op, so it must not raise.
+    """
+    try:
+        return get_type_hints(return_type, include_extras=True)
+    except Exception:  # noqa: BLE001 - any failure here just costs a role.
+        return {}
 
 
 def _resolve_hints(fn: Callable) -> dict:

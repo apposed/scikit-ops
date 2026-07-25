@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 from skop import op, progress
+from skop.types import ImageData
 
 
 @op(env="skimage")
@@ -24,7 +25,7 @@ def synthetic_nuclei(
     radius_xy_max: float = 22.0,
     noise_level: int = 6553,
     seed: int | None = None,
-) -> np.ndarray:
+) -> ImageData:
     """Generate a synthetic 3D volume of anisotropic Gaussian blob nuclei.
 
     The default radii are centered on the confocal model's training data, so

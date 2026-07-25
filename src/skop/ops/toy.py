@@ -13,6 +13,7 @@ from typing import Annotated, NamedTuple
 import numpy as np
 
 from skop import Out, cancel_requested, op, progress
+from skop.types import ImageData, LabelsData, PointsData
 
 
 @op(env="minimal")
@@ -45,13 +46,15 @@ def scale(
 
 @op(env="minimal")
 def scale_into(
-    image: np.ndarray,
-    result: Out[np.ndarray],
+    image: ImageData,
+    result: Out[ImageData],
     factor: float = 2.0,
 ) -> None:
     """Computer form: fill a buffer the caller allocated.
 
-    The caller owns ``result``, so nothing is sent back over the wire.
+    The caller owns ``result``, so nothing is sent back over the wire. Note
+    that ``Out`` and a role compose: nested Annotated flattens, so ``result``
+    is both an output buffer and an image.
     """
     np.multiply(image, factor, out=result, casting="unsafe")
 
@@ -79,12 +82,12 @@ def probe() -> str:
 
 
 class Findings(NamedTuple):
-    labels: np.ndarray
-    points: np.ndarray
+    labels: LabelsData
+    points: PointsData
 
 
 @op(env="minimal")
-def find_nothing(image: np.ndarray) -> Findings:
+def find_nothing(image: ImageData) -> Findings:
     """Return an empty result, as a segmentation that finds nothing would."""
     return Findings(
         labels=np.zeros_like(image, dtype=np.uint16),

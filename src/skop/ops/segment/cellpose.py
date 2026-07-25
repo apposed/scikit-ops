@@ -10,13 +10,14 @@ from typing import Annotated
 import numpy as np
 
 from skop import op, progress
+from skop.types import ImageData, LabelsData
 
 from .._util import to_gray
 
 
 @op(env="cellpose")
 def cellpose(
-    image: np.ndarray,
+    image: ImageData,
     diameter: Annotated[
         float,
         {"widget_type": "FloatSpinBox", "min": 0.0, "max": 1000.0, "step": 1.0},
@@ -30,7 +31,7 @@ def cellpose(
         {"widget_type": "FloatSlider", "min": -6.0, "max": 6.0, "step": 0.1},
     ] = 0.0,
     use_gpu: bool = True,
-) -> np.ndarray:
+) -> LabelsData:
     """Segment cells with Cellpose.
 
     Args:

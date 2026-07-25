@@ -8,16 +8,17 @@ from __future__ import annotations
 import numpy as np
 
 from skop import op
+from skop.types import ImageData, LabelsData
 
 from ._util import to_gray
 
 
 @op(env="skimage")
 def otsu(
-    image: np.ndarray,
+    image: ImageData,
     invert: bool = False,
     label_objects: bool = True,
-) -> np.ndarray:
+) -> LabelsData:
     """Threshold an image by Otsu's method.
 
     Args:

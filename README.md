@@ -61,19 +61,18 @@ specs, failures = skop.discover()
 ```python
 from typing import Annotated, NamedTuple
 
-import numpy as np
-
 from skop import op
+from skop.types import ImageData, LabelsData
 
 
 class Result(NamedTuple):
-    labels: np.ndarray
+    labels: LabelsData
     count: int
 
 
 @op(env="stardist-tf")
 def segment(
-    image: np.ndarray,
+    image: ImageData,
     prob_thresh: Annotated[
         float, {"widget_type": "FloatSlider", "min": 0.0, "max": 1.0}
     ] = 0.5,
@@ -96,6 +95,31 @@ them into a minimal environment that has little more than numpy:
 Multiple outputs come from a `NamedTuple`: its field names become the names of
 the op's outputs. `skop.progress(...)` and `skop.cancel_requested()` report
 to whoever is running the op, and do nothing when it is called directly.
+
+### Saying what an array is
+
+Every op here passes `np.ndarray` around, which tells a front end nothing
+about how to display it. `skop.types` adds that missing half:
+
+| Alias | Role | napari shows it as |
+| --- | --- | --- |
+| `ImageData` | `Role.image` | an Image layer |
+| `LabelsData` | `Role.labels` | a Labels layer |
+| `PointsData` | `Role.points` | a Points layer |
+| `VectorsData` | `Role.vectors` | a Vectors layer |
+| `TracksData` | `Role.tracks` | a Tracks layer |
+
+They are `Annotated[np.ndarray, ...]` aliases, so nothing else changes: the
+codec still sees an array, direct callers still get an array, and
+`ParamSpec.type` is still `np.ndarray`. They compose with the rest —
+`Out[LabelsData]` and `Annotated[LabelsData, {"label": "Nuclei"}]` both work,
+in either order.
+
+Roles are advisory and never guessed. An unannotated array reports
+`role is None`, and deciding what to do with that is the front end's business,
+not skop's. Nothing in `skop.types` imports napari; the names simply mirror
+`napari.types` so that mapping is a lookup rather than a judgement call, and
+`Role` is equally the hook a Fiji or plain-magicgui front end reads.
 
 ### Where it goes
 
