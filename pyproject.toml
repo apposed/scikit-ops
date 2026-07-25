@@ -38,3 +38,7 @@ known-first-party = ["skop"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "env(env_id): needs op environment <env_id>; skipped unless it is already built or --build-envs is passed",
+]

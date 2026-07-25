@@ -157,3 +157,23 @@ uv sync --all-groups
 uv run pytest
 uv run ruff check --fix && uv run ruff format
 ```
+
+### Testing the ops for real
+
+Ops are exercised end to end in their own environments, in `test_ops_e2e.py`.
+Each such test declares what it needs with `@pytest.mark.env("<env-id>")`, and
+is skipped when that environment is not built — so a plain `pytest` run stays
+fast and offline, testing against whatever happens to be installed already.
+
+To run them all, building whatever is missing:
+
+```sh
+uv run pytest --build-envs        # everything; slow the first time
+uv run pytest --build-envs -m env # only the op tests
+uv run pytest -m "not env"        # only the fast ones
+```
+
+CI runs `--build-envs`, since these ops are the whole point of the project and
+nothing else validates them against the stacks they target. The flag is also
+settable as `PYTEST_ADDOPTS=--build-envs`, which is handy when the pytest
+invocation is not yours to edit.

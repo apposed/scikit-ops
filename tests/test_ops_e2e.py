@@ -1,26 +1,23 @@
 """Real ops, running in their real environments.
 
-Each test skips unless its environment has already been built, so the suite
-stays runnable without waiting on a TensorFlow or PyTorch install. To opt in,
-build the environment first:
+Each test declares the environment it needs with ``@pytest.mark.env``. By
+default a test whose environment is not built yet is skipped, so the suite
+stays runnable without waiting on a TensorFlow or PyTorch install. To run
+them all, building whatever is missing:
 
-    uv run python -c "import skop; skop.Runner().environment('stardist-tf')"
+    uv run pytest --build-envs
+
+That is what CI runs, and it is the only way these ops get exercised against
+the stacks they actually target. Expect it to take a while the first time.
+The skipping logic lives in the root conftest.py.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pytest
-from appose.util.filepath import appose_envs_dir
 
 import skop
-
-
-def requires_env(env_id: str):
-    built = (Path(appose_envs_dir()) / f"skop-{env_id}").is_dir()
-    return pytest.mark.skipif(not built, reason=f"env '{env_id}' is not built")
 
 
 @pytest.fixture(scope="module")
@@ -44,28 +41,28 @@ def blobs_2d(size: int = 128, sigma: float = 7.0) -> np.ndarray:
     return (image / image.max() * 255).astype(np.uint16)
 
 
-@requires_env("skimage")
+@pytest.mark.env("skimage")
 def test_otsu(runner):
-    from skop.ops import threshold
+    from skop.ops.threshold import otsu
 
     image = np.zeros((64, 64), dtype=np.uint8)
     image[10:25, 10:25] = 200
     image[40:55, 40:55] = 220
 
-    labels = runner.run(threshold.otsu, image=image)
+    labels = runner.run(otsu, image=image)
     assert labels.dtype == np.uint16
     assert labels.max() == 2
 
-    mask = runner.run(threshold.otsu, image=image, label_objects=False)
+    mask = runner.run(otsu, image=image, label_objects=False)
     assert set(np.unique(mask)) == {0, 1}
 
 
-@requires_env("skimage")
+@pytest.mark.env("skimage")
 def test_synthetic_nuclei(runner):
-    from skop.ops import generate
+    from skop.ops.generate import synthetic_nuclei
 
     volume = runner.run(
-        generate.synthetic_nuclei,
+        synthetic_nuclei,
         size_z=16,
         size_y=64,
         size_x=64,
@@ -78,44 +75,44 @@ def test_synthetic_nuclei(runner):
     assert volume.max() > volume.min()
 
 
-@requires_env("stardist-tf")
+@pytest.mark.env("stardist-tf")
 def test_stardist2d(runner):
     from skop.ops.segment import stardist2d
 
-    labels = runner.run(stardist2d.stardist2d, image=blobs_2d())
+    labels = runner.run(stardist2d, image=blobs_2d())
     assert labels.dtype == np.uint16
     assert labels.max() == 5
 
 
-@requires_env("stardist-tf")
+@pytest.mark.env("stardist-tf")
 def test_stardist2d_reports_progress(runner):
     from skop.ops.segment import stardist2d
 
     messages = []
     runner.run(
-        stardist2d.stardist2d,
+        stardist2d,
         image=blobs_2d(),
         on_progress=lambda event: messages.append(event.message),
     )
     assert any(m and "Predicting" in m for m in messages)
 
 
-@requires_env("stardist-tf")
+@pytest.mark.env("stardist-tf")
 def test_starfun3d_segments_what_was_generated(runner):
-    from skop.ops import generate
-    from skop.ops.segment import starfun3d
+    from skop.ops.generate import synthetic_nuclei
+    from skop.ops.segment import segment_nuclei
 
     # NB: this crosses two environments -- generated under skimage, segmented
     # under stardist-tf -- in two worker processes.
     volume = runner.run(
-        generate.synthetic_nuclei,
+        synthetic_nuclei,
         size_z=32,
         size_y=128,
         size_x=128,
         n_nuclei=5,
         seed=3,
     )
-    result = runner.run(starfun3d.segment_nuclei, image=volume)
+    result = runner.run(segment_nuclei, image=volume)
 
     # NB: not an exact count. Randomly placed nuclei can overlap, and how many
     # remain separable is a property of the model, not of this plumbing.
@@ -124,19 +121,20 @@ def test_starfun3d_segments_what_was_generated(runner):
     assert result.points.shape == (result.labels.max(), 3)
 
 
-@requires_env("stardist-tf")
+@pytest.mark.env("stardist-tf")
 def test_starfun3d_honors_model_choice(runner):
-    from skop.ops.segment import starfun3d
+    from skop.ops.segment import segment_nuclei
+    from skop.ops.segment.starfun3d import Model
 
     # The original loaded 'confocal' whichever model was requested; each of
     # these now resolves to its own weights.
     volume = np.zeros((16, 64, 64), dtype=np.uint16)
-    for model in (starfun3d.Model.sospim, starfun3d.Model.confocal):
-        result = runner.run(starfun3d.segment_nuclei, image=volume, model=model)
+    for model in (Model.sospim, Model.confocal):
+        result = runner.run(segment_nuclei, image=volume, model=model)
         assert result.labels.shape == volume.shape
 
 
-@requires_env("unseg-cv")
+@pytest.mark.env("unseg-cv")
 def test_unseg(runner):
     from skop.ops.segment import unseg
 
@@ -170,7 +168,7 @@ def test_unseg(runner):
     nuclei = np.clip(nuclei + rng.normal(0, 0.06, (size, size)), 0, 1)
     image[2] = (nuclei / nuclei.max() * 255).astype(np.uint8)
 
-    result = runner.run(unseg.unseg, image=image)
+    result = runner.run(unseg, image=image)
     assert result.n_nuclei == len(centers)
     assert result.n_cells == len(centers)
     assert result.nuclei.shape == (size, size)
