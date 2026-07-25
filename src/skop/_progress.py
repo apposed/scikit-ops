@@ -1,6 +1,6 @@
 """Progress reporting from inside an op.
 
-An op calls ``opkit.progress(...)`` without knowing whether it is running
+An op calls ``skop.progress(...)`` without knowing whether it is running
 under Appose or being called directly. Outside a worker, it is a no-op.
 """
 
@@ -10,7 +10,7 @@ import contextvars
 from typing import Any
 
 _current: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "opkit_task", default=None
+    "skop_task", default=None
 )
 
 

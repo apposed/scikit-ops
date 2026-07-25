@@ -9,13 +9,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import opkit
-from ops import toy
+import skop
+from skop.ops import toy
 
 
 @pytest.fixture(scope="module")
 def runner():
-    with opkit.Runner() as r:
+    with skop.Runner() as r:
         yield r
 
 
@@ -30,7 +30,7 @@ def test_op_runs_in_its_own_environment(runner):
 
     worker = runner.run(toy.probe)
     assert sys.executable not in worker
-    assert "opkit-minimal" in worker
+    assert "skop-minimal" in worker
 
 
 def test_array_round_trip_and_multiple_outputs(runner):

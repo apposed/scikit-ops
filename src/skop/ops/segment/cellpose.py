@@ -9,9 +9,9 @@ from typing import Annotated
 
 import numpy as np
 
-from opkit import op, progress
+from skop import op, progress
 
-from ._util import to_gray
+from .._util import to_gray
 
 
 @op(env="cellpose")

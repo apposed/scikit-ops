@@ -1,6 +1,6 @@
 """Op declaration and signature introspection.
 
-This module is part of opkit's austere core: it is imported inside every
+This module is part of skop's austere core: it is imported inside every
 worker environment, so it must depend on nothing beyond the standard library.
 """
 
@@ -20,7 +20,7 @@ class _Direction:
         self.name = name
 
     def __repr__(self) -> str:
-        return f"<opkit.{self.name}>"
+        return f"<skop.{self.name}>"
 
 
 OUT = _Direction("Out")
@@ -153,14 +153,14 @@ def op(
     """
 
     def decorate(fn: Callable) -> Callable:
-        fn.__opkit__ = _OpConfig(env=env, main_thread=main_thread, exclusive=exclusive)
+        fn.__skop__ = _OpConfig(env=env, main_thread=main_thread, exclusive=exclusive)
         return fn
 
     return decorate
 
 
 def is_op(obj: Any) -> bool:
-    return callable(obj) and isinstance(getattr(obj, "__opkit__", None), _OpConfig)
+    return callable(obj) and isinstance(getattr(obj, "__skop__", None), _OpConfig)
 
 
 def spec(fn: Callable) -> OpSpec:
@@ -169,11 +169,11 @@ def spec(fn: Callable) -> OpSpec:
     Annotations are resolved here rather than at decoration time, so that an
     op may refer to types defined later in its own module.
     """
-    cached = getattr(fn, "__opkit_spec__", None)
+    cached = getattr(fn, "__skop_spec__", None)
     if cached is not None:
         return cached
 
-    config = getattr(fn, "__opkit__", None)
+    config = getattr(fn, "__skop__", None)
     if not isinstance(config, _OpConfig):
         raise TypeError(f"Not an op: {fn!r} (missing @op decorator)")
 
@@ -214,7 +214,7 @@ def spec(fn: Callable) -> OpSpec:
         return_type=_strip(hints.get("return", signature.return_annotation)),
         doc=inspect.getdoc(fn),
     )
-    fn.__opkit_spec__ = result
+    fn.__skop_spec__ = result
     return result
 
 

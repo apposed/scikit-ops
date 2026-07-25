@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "naplari-hacking"
+name = "scikit-ops"
 version = "0.1.0"
 description = "Appose-powered ops, and the machinery for running them"
 requires-python = ">=3.10"
@@ -23,15 +23,15 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["opkit", "src/imgops"]
+packages = ["src/skop"]
 
 [tool.ruff]
 line-length = 88
 # Vendored upstream algorithm: keep it diffable against its source.
-extend-exclude = ["ops/unseg/_algorithm.py"]
+extend-exclude = ["src/skop/ops/segment/unseg/_algorithm.py"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["opkit", "ops"]
+known-first-party = ["skop"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

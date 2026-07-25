@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-import opkit
+import skop
 
-SPECS, FAILURES = opkit.discover()
+SPECS, FAILURES = skop.discover()
 BY_NAME = {s.name: s for s in SPECS}
 
 
@@ -26,7 +26,7 @@ def test_collection_is_not_empty():
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
 def test_op_declares_a_known_environment(spec):
-    runner = opkit.Runner()
+    runner = skop.Runner()
     # Raises FileNotFoundError, listing what does exist, if the env is absent.
     assert runner.env_config(spec.env).exists()
 
@@ -46,21 +46,21 @@ def test_op_declares_outputs(spec):
 
 def test_stardist_ops_share_one_environment():
     # The payoff of named environments: one TensorFlow build, two ops.
-    assert BY_NAME["ops.stardist2d:stardist2d"].env == "stardist-tf"
-    assert BY_NAME["ops.starfun3d:segment_nuclei"].env == "stardist-tf"
+    assert BY_NAME["skop.ops.segment.stardist2d:stardist2d"].env == "stardist-tf"
+    assert BY_NAME["skop.ops.segment.starfun3d:segment_nuclei"].env == "stardist-tf"
 
 
 def test_enum_params_carry_their_choices():
-    spec = BY_NAME["ops.stardist2d:stardist2d"]
+    spec = BY_NAME["skop.ops.segment.stardist2d:stardist2d"]
     model = next(p for p in spec.params if p.name == "model")
     assert [m.value for m in model.type] == ["2D_versatile_fluo", "2D_versatile_he"]
 
 
 def test_unseg_reports_counts_alongside_masks():
-    spec = BY_NAME["ops.unseg:unseg"]
+    spec = BY_NAME["skop.ops.segment.unseg:unseg"]
     assert spec.outputs == ("nuclei", "cells", "n_nuclei", "n_cells")
 
 
 def test_starfun3d_returns_labels_and_points():
-    spec = BY_NAME["ops.starfun3d:segment_nuclei"]
+    spec = BY_NAME["skop.ops.segment.starfun3d:segment_nuclei"]
     assert spec.outputs == ("labels", "points")

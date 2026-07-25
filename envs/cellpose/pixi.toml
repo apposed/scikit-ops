@@ -1,5 +1,5 @@
 [workspace]
-name = "opkit-cellpose"
+name = "skop-cellpose"
 description = "Cellpose segmentation, on PyTorch."
 channels = ["conda-forge"]
 platforms = ["osx-arm64", "linux-64", "win-64"]

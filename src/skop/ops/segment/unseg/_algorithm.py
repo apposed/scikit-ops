@@ -8,7 +8,7 @@ fluorescent images of tissues containing both nucleus and cell membrane markers.
 ##### LIGHTLY FORKED VERSION, FOR USE AS AN OP #####
 # Derived from the Appose fork in ctrueden/unseg-fiji. Changes from that fork:
 # * The trailing run block is gone; ops/unseg/__init__.py drives it instead.
-# * report() forwards to opkit.progress rather than to a task callback that
+# * report() forwards to skop.progress rather than to a task callback that
 #   had to be installed by the caller.
 # * matplotlib is gone, along with the plotting it backed. A worker process
 #   has no display; the original already suppressed plots under Appose.
@@ -31,7 +31,7 @@ from skimage.segmentation import find_boundaries, mark_boundaries, watershed
 from skimage.util import img_as_ubyte
 from sklearn.cluster import KMeans
 
-from opkit import progress
+from skop import progress
 
 
 def report(*args):

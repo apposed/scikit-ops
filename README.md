@@ -1,6 +1,6 @@
-# naplari-hacking
+# scikit-ops
 
-A collection of image-processing **ops**, and `opkit` — the machinery that runs
+A collection of image-processing **ops**, and `skop` — the machinery that runs
 them.
 
 An op is an ordinary Python function. The same function can be called directly,
@@ -13,8 +13,10 @@ the op changes between those modes.
 ```
 envs/<env-id>/pixi.toml   environment definitions, named and shared between ops
 envs/<env-id>/init.py     optional; runs in each worker before its I/O loop
-ops/<name>.py             an op module (or ops/<name>/ when one file won't do)
-opkit/                    op-independent machinery
+src/skop/                 op-independent machinery
+src/skop/ops/<ns>.py      an op namespace, when its ops share one environment
+src/skop/ops/<ns>/<op>.py an op namespace, when its ops do not
+src/imgops/               napari/magicgui front ends (not published)
 ```
 
 Environments are keyed by ID, and several ops may declare the same one. Ops
@@ -25,13 +27,22 @@ sharing an environment also share a warm worker process, unless one asks for
 
 | Op | Environment | Does |
 | --- | --- | --- |
-| `ops.otsu:otsu` | `skimage` | Otsu thresholding |
-| `ops.cellpose:cellpose` | `cellpose` | Cellpose segmentation |
-| `ops.stardist2d:stardist2d` | `stardist-tf` | StarDist 2D, pretrained |
-| `ops.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
-| `ops.starfun3d:synthetic_nuclei` | `skimage` | Synthetic 3D test volume |
-| `ops.unseg:unseg` | `unseg-cv` | Unsupervised nuclei + cells |
-| `ops.toy:*` | `minimal` | Exercises for opkit itself |
+| `skop.ops.threshold:otsu` | `skimage` | Otsu thresholding |
+| `skop.ops.segment.cellpose:cellpose` | `cellpose` | Cellpose segmentation |
+| `skop.ops.segment.stardist2d:stardist2d` | `stardist-tf` | StarDist 2D, pretrained |
+| `skop.ops.segment.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
+| `skop.ops.generate:synthetic_nuclei` | `skimage` | Synthetic 3D test volume |
+| `skop.ops.segment.unseg:unseg` | `unseg-cv` | Unsupervised nuclei + cells |
+| `skop.ops.toy:*` | `minimal` | Exercises for skop itself |
+
+Those are the fully qualified op IDs, as `discover()` reports them. Callers
+import from the namespace instead, and never need to know whether it is one
+module or a package of them:
+
+```python
+from skop.ops.threshold import otsu
+from skop.ops.segment import cellpose, stardist2d
+```
 
 `stardist2d` and `segment_nuclei` share one TensorFlow build and one warm
 worker — the point of naming environments rather than tying them to ops.
@@ -41,8 +52,8 @@ old scikit-image, which is exactly why it needs an environment of its own.
 To list what the collection currently offers:
 
 ```python
-import opkit
-specs, failures = opkit.discover()
+import skop
+specs, failures = skop.discover()
 ```
 
 ## Writing an op
@@ -52,7 +63,7 @@ from typing import Annotated, NamedTuple
 
 import numpy as np
 
-from opkit import op
+from skop import op
 
 
 class Result(NamedTuple):
@@ -83,8 +94,29 @@ them into a minimal environment that has little more than numpy:
    in the body.
 
 Multiple outputs come from a `NamedTuple`: its field names become the names of
-the op's outputs. `opkit.progress(...)` and `opkit.cancel_requested()` report
+the op's outputs. `skop.progress(...)` and `skop.cancel_requested()` report
 to whoever is running the op, and do nothing when it is called directly.
+
+### Where it goes
+
+Ops live in a namespace under `skop/ops/`, named for what they do. How the
+namespace is laid out inside depends on its ops, and the split point is the
+environment:
+
+- **One module** when the ops are variations on one call sharing one
+  environment — every `skop.ops.threshold` op is a few lines against
+  `skimage.filters`, so they share `threshold.py`.
+- **A package, one module per op**, when they do not — `skop.ops.segment`
+  spans three environments and each op carries its own models and types, so
+  each gets a file and `segment/__init__.py` re-exports them.
+
+An op needing several files of its own becomes a package
+(`segment/unseg/__init__.py` plus siblings). Underscore-prefixed modules are
+private and never imported by discovery, which is where shared helpers and
+vendored code belong.
+
+Because `from skop.ops.<ns> import <op>` reads the same either way, a
+namespace can grow from a module into a package without breaking callers.
 
 ### Computation forms
 
@@ -104,14 +136,14 @@ inplace op must be handed its buffers.
 ## Running an op
 
 ```python
-import opkit
-from ops import toy
+import skop
+from skop.ops import toy
 
 # Directly, in this process, using this process's dependencies.
 toy.add(2, 3)
 
 # Or in the op's own environment, in a worker process.
-with opkit.Runner() as runner:
+with skop.Runner() as runner:
     runner.run(toy.add, a=2, b=3)
 ```
 

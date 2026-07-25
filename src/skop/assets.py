@@ -18,7 +18,7 @@ from ._progress import progress
 
 
 def cache_dir() -> Path:
-    """Where opkit keeps downloaded assets.
+    """Where skop keeps downloaded assets.
 
     Honors ``OPKIT_CACHE_DIR``, then ``XDG_CACHE_HOME``, then ``~/.cache``.
     """
@@ -27,7 +27,7 @@ def cache_dir() -> Path:
         return Path(override)
     xdg = os.environ.get("XDG_CACHE_HOME")
     base = Path(xdg) if xdg else Path.home() / ".cache"
-    return base / "opkit"
+    return base / "skop"
 
 
 def unzip_from_url(url: str, name: str, marker: str | None = None) -> Path:

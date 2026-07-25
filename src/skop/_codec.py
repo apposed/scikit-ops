@@ -6,7 +6,7 @@ library, numpy, and appose only.
 Conversion is done explicitly here rather than by registering a global
 ``appose.util.message`` codec for ``numpy.ndarray``. A global registration
 would reinterpret every bare array passed by any Appose user in the same
-process, including code that has nothing to do with opkit.
+process, including code that has nothing to do with skop.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def _to_ndarray(array: np.ndarray, refs: list) -> NDArray:
         nda = NDArray(dtype, shape)
     refs.append(nda)
     # The one unavoidable copy: an arbitrary array is not already in shared
-    # memory. Callers who allocate via opkit can skip it.
+    # memory. Callers who allocate via skop can skip it.
     nda.ndarray()[...] = array
     return nda
 

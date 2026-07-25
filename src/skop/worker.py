@@ -1,4 +1,4 @@
-"""The worker-side half of opkit.
+"""The worker-side half of skop.
 
 This module is loaded inside every op environment, via an Appose service init
 script. It must therefore stay austere: standard library, numpy, and appose
@@ -23,7 +23,7 @@ def invoke(task: Any, module: str, function: str, kwargs: dict) -> dict:
 
     Args:
         task: The Appose task, used for progress and cancellation.
-        module: Module to import the op from, e.g. ``"ops.starfun3d"``.
+        module: Module to import the op from, e.g. ``"skop.ops.segment.starfun3d"``.
         function: Name of the op function within that module.
         kwargs: Op arguments, as decoded by Appose.
 

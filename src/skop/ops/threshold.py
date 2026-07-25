@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from opkit import op
+from skop import op
 
 from ._util import to_gray
 

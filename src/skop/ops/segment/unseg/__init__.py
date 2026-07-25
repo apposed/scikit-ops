@@ -18,7 +18,7 @@ from typing import Annotated, NamedTuple
 
 import numpy as np
 
-from opkit import op, progress
+from skop import op, progress
 
 
 class DistanceTransform(Enum):

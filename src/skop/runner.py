@@ -1,4 +1,4 @@
-"""The host-side half of opkit: build environments and run ops in them.
+"""The host-side half of skop: build environments and run ops in them.
 
 The host never imports an op's dependencies. It imports the op module only to
 read its signature -- which is cheap, because ops keep heavy imports inside
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 # The script sent for every op call. Its last statement is an expression
 # yielding a dict, which Appose turns into the task's outputs.
-_CALL = "opkit_invoke(task, module, function, kwargs)"
+_CALL = "skop_invoke(task, module, function, kwargs)"
 
 # Installed into every worker via the service init script. Names defined here
 # become worker exports, and so are in scope for every task.
@@ -36,14 +36,23 @@ _INIT = """
 import sys
 sys.path.insert(0, {root!r})
 import numpy  # NB: must precede the worker's I/O loop on Windows.
-import opkit.worker
-opkit_invoke = opkit.worker.invoke
+import skop.worker
+skop_invoke = skop.worker.invoke
 """
 
 
 def _default_root() -> Path:
-    """The directory holding the ``opkit`` and ``ops`` packages."""
+    """The directory holding the ``skop`` package."""
     return Path(__file__).resolve().parent.parent
+
+
+def _default_envs_dir(root: Path) -> Path:
+    """The ``envs`` directory of the checkout whose ``src`` is *root*.
+
+    Note: environment definitions are data alongside the source tree, not
+    inside it, so they sit one level up from the packages themselves.
+    """
+    return root.parent / "envs"
 
 
 class Runner:
@@ -56,7 +65,9 @@ class Runner:
         debug: bool = False,
     ) -> None:
         self.root = Path(root).resolve() if root else _default_root()
-        self.envs_dir = Path(envs_dir).resolve() if envs_dir else self.root / "envs"
+        self.envs_dir = (
+            Path(envs_dir).resolve() if envs_dir else _default_envs_dir(self.root)
+        )
         self.debug = debug
         self._services: dict[tuple, Any] = {}
         self._envs: dict[tuple, Any] = {}
@@ -91,7 +102,7 @@ class Runner:
             return self._envs[key]
 
         config = self.env_config(env_id)
-        builder = appose.pixi(config).name(f"opkit-{env_id}")
+        builder = appose.pixi(config).name(f"skop-{env_id}")
         if self.debug:
             builder = builder.log_debug()
         env = builder.build()

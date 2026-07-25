@@ -1,4 +1,4 @@
-"""opkit: write an op once, run it anywhere.
+"""skop: write an op once, run it anywhere.
 
 An op is an ordinary Python function carrying an ``@op`` decorator that names
 the environment it needs. The same function can be called directly, run in
@@ -50,7 +50,7 @@ _LAZY = {"Runner": "runner", "run": "runner", "discover": "discovery"}
 
 def __getattr__(name: str) -> Any:
     # Host-side machinery is imported on demand, so that merely importing
-    # opkit inside a worker stays cheap.
+    # skop inside a worker stays cheap.
     module_name = _LAZY.get(name)
     if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

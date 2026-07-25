@@ -1,7 +1,7 @@
 """StarDist 2D inference with a pretrained model.
 
 Ported from src/imgops/implementations/stardist2d.py. Shares the
-'stardist-tf' environment with ops/starfun3d.py.
+'stardist-tf' environment with starfun3d.py.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from typing import Annotated
 
 import numpy as np
 
-from opkit import op, progress
+from skop import op, progress
 
-from ._util import to_gray
+from .._util import to_gray
 
 
 class PretrainedModel(Enum):

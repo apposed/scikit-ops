@@ -1,4 +1,4 @@
-"""Toy ops, used to exercise opkit without dragging in a deep learning stack.
+"""Toy ops, used to exercise skop without dragging in a deep learning stack.
 
 Note the shape of an op module: imports at the top are limited to what the
 signatures need, so this module loads in a minimal environment. Anything an
@@ -12,7 +12,7 @@ from typing import Annotated, NamedTuple
 
 import numpy as np
 
-from opkit import Out, cancel_requested, op, progress
+from skop import Out, cancel_requested, op, progress
 
 
 @op(env="minimal")

@@ -4,7 +4,7 @@ Each test skips unless its environment has already been built, so the suite
 stays runnable without waiting on a TensorFlow or PyTorch install. To opt in,
 build the environment first:
 
-    uv run python -c "import opkit; opkit.Runner().environment('stardist-tf')"
+    uv run python -c "import skop; skop.Runner().environment('stardist-tf')"
 """
 
 from __future__ import annotations
@@ -15,17 +15,17 @@ import numpy as np
 import pytest
 from appose.util.filepath import appose_envs_dir
 
-import opkit
+import skop
 
 
 def requires_env(env_id: str):
-    built = (Path(appose_envs_dir()) / f"opkit-{env_id}").is_dir()
+    built = (Path(appose_envs_dir()) / f"skop-{env_id}").is_dir()
     return pytest.mark.skipif(not built, reason=f"env '{env_id}' is not built")
 
 
 @pytest.fixture(scope="module")
 def runner():
-    with opkit.Runner() as r:
+    with skop.Runner() as r:
         yield r
 
 
@@ -46,26 +46,26 @@ def blobs_2d(size: int = 128, sigma: float = 7.0) -> np.ndarray:
 
 @requires_env("skimage")
 def test_otsu(runner):
-    from ops import otsu
+    from skop.ops import threshold
 
     image = np.zeros((64, 64), dtype=np.uint8)
     image[10:25, 10:25] = 200
     image[40:55, 40:55] = 220
 
-    labels = runner.run(otsu.otsu, image=image)
+    labels = runner.run(threshold.otsu, image=image)
     assert labels.dtype == np.uint16
     assert labels.max() == 2
 
-    mask = runner.run(otsu.otsu, image=image, label_objects=False)
+    mask = runner.run(threshold.otsu, image=image, label_objects=False)
     assert set(np.unique(mask)) == {0, 1}
 
 
 @requires_env("skimage")
 def test_synthetic_nuclei(runner):
-    from ops import starfun3d
+    from skop.ops import generate
 
     volume = runner.run(
-        starfun3d.synthetic_nuclei,
+        generate.synthetic_nuclei,
         size_z=16,
         size_y=64,
         size_x=64,
@@ -80,7 +80,7 @@ def test_synthetic_nuclei(runner):
 
 @requires_env("stardist-tf")
 def test_stardist2d(runner):
-    from ops import stardist2d
+    from skop.ops.segment import stardist2d
 
     labels = runner.run(stardist2d.stardist2d, image=blobs_2d())
     assert labels.dtype == np.uint16
@@ -89,7 +89,7 @@ def test_stardist2d(runner):
 
 @requires_env("stardist-tf")
 def test_stardist2d_reports_progress(runner):
-    from ops import stardist2d
+    from skop.ops.segment import stardist2d
 
     messages = []
     runner.run(
@@ -102,12 +102,13 @@ def test_stardist2d_reports_progress(runner):
 
 @requires_env("stardist-tf")
 def test_starfun3d_segments_what_was_generated(runner):
-    from ops import starfun3d
+    from skop.ops import generate
+    from skop.ops.segment import starfun3d
 
     # NB: this crosses two environments -- generated under skimage, segmented
     # under stardist-tf -- in two worker processes.
     volume = runner.run(
-        starfun3d.synthetic_nuclei,
+        generate.synthetic_nuclei,
         size_z=32,
         size_y=128,
         size_x=128,
@@ -125,7 +126,7 @@ def test_starfun3d_segments_what_was_generated(runner):
 
 @requires_env("stardist-tf")
 def test_starfun3d_honors_model_choice(runner):
-    from ops import starfun3d
+    from skop.ops.segment import starfun3d
 
     # The original loaded 'confocal' whichever model was requested; each of
     # these now resolves to its own weights.
@@ -137,7 +138,7 @@ def test_starfun3d_honors_model_choice(runner):
 
 @requires_env("unseg-cv")
 def test_unseg(runner):
-    from ops import unseg
+    from skop.ops.segment import unseg
 
     rng = np.random.default_rng(11)
     size = 224

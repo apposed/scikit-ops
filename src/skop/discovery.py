@@ -36,33 +36,25 @@ class LoadFailure:
         return "\n".join(lines)
 
 
-def discover(package: str = "ops") -> tuple[list[OpSpec], list[LoadFailure]]:
+def discover(package: str = "skop.ops") -> tuple[list[OpSpec], list[LoadFailure]]:
     """Import every module in a collection and return the ops it declares.
 
     Returns:
         The specs of every op found, and a failure record for each module
         that could not be imported.
     """
+    # A collection that does not import at all is a bad argument rather than
+    # a bad op, so it raises instead of joining the failure list.
     root = importlib.import_module(package)
     specs: list[OpSpec] = []
     failures: list[LoadFailure] = []
 
-    for module_name in _module_names(root, package):
-        try:
-            module = importlib.import_module(module_name)
-        except Exception as exc:  # noqa: BLE001 -- one bad op must not hide the rest
-            failures.append(
-                LoadFailure(
-                    module=module_name,
-                    error=f"{type(exc).__name__}: {exc}",
-                    heavy_imports=_module_scope_imports(module_name),
-                )
-            )
-            continue
+    for module_name, module in _walk(package, root, failures):
         for name in dir(module):
             obj = getattr(module, name)
             # NB: the name check keeps a re-exported op from being counted
-            # once per module that imports it.
+            # once per module that imports it -- which is what makes a
+            # namespace's __init__.py free to re-export its ops.
             if is_op(obj) and obj.__module__ == module_name:
                 specs.append(spec(obj))
 
@@ -70,15 +62,42 @@ def discover(package: str = "ops") -> tuple[list[OpSpec], list[LoadFailure]]:
     return specs, failures
 
 
-def _module_names(root, package: str) -> list[str]:
-    paths = getattr(root, "__path__", None)
+def _walk(package: str, module, failures: list[LoadFailure]):
+    """Yield a collection and every module beneath it, depth first.
+
+    An op module may sit directly in the collection (``skop/ops/toy.py``),
+    inside a namespace (``skop/ops/segment/cellpose.py``), or be a package of
+    its own when one file is not enough (``skop/ops/segment/unseg/``). All
+    three are the same walk: import what is there, then descend into whatever
+    has submodules. Underscore-prefixed names are private helpers --
+    ``_util.py``, ``_algorithm.py`` -- and are never imported.
+    """
+    yield package, module
+
+    paths = getattr(module, "__path__", None)
     if paths is None:
-        return [package]
-    return [
-        f"{package}.{info.name}"
-        for info in pkgutil.iter_modules(paths)
-        if not info.name.startswith("_")
-    ]
+        return
+    for info in pkgutil.iter_modules(paths):
+        if info.name.startswith("_"):
+            continue
+        name = f"{package}.{info.name}"
+        child = _import(name, failures)
+        if child is not None:
+            yield from _walk(name, child, failures)
+
+
+def _import(module_name: str, failures: list[LoadFailure]):
+    try:
+        return importlib.import_module(module_name)
+    except Exception as exc:  # noqa: BLE001 -- one bad op must not hide the rest
+        failures.append(
+            LoadFailure(
+                module=module_name,
+                error=f"{type(exc).__name__}: {exc}",
+                heavy_imports=_module_scope_imports(module_name),
+            )
+        )
+        return None
 
 
 def _module_scope_imports(module_name: str) -> tuple[str, ...]:
