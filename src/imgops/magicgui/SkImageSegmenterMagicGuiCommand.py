@@ -15,8 +15,14 @@ from __future__ import annotations
 
 import numpy as np
 from magicgui.experimental import guiclass
-from skimage import filters, measure
 
+try:
+    from skimage import filters, measure
+    _is_skimage_available = True
+except ImportError:
+    filters = None
+    measure = None
+    _is_skimage_available = False
 
 @guiclass
 class OtsuCommand:
@@ -26,6 +32,18 @@ class OtsuCommand:
 
     invert: bool = False
     label_objects: bool = True
+
+    def are_dependencies_available(self) -> bool:
+        return _is_skimage_available
+
+    def environment_path(self) -> str | None:
+        """Return the pinned remote env path for this command, or None."""
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "appose"))
+        from execute_appose import get_registry
+        env = get_registry().resolve(type(self).__name__)
+        return env.path if env is not None else None
 
     def segment(self, image: np.ndarray) -> np.ndarray:
         """Threshold with Otsu, optionally label connected components."""

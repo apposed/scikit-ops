@@ -9,4 +9,4 @@ description = "napari + cellpose hacking utilities"
 requires-python = ">=3.10"
 
 [tool.hatch.build.targets.wheel]
-packages = ["magicgui"]
+packages = ["src/imgops"]

@@ -32,6 +32,7 @@ cudnn = "8.1.0.*"
 
 [pypi-dependencies]
 appose = "*"
+naplari-hacking = { path = "../..", editable = true }
 PyQt5 = "*"
 
 # tensorflow needs to be below 2.11 for GPU support on windows

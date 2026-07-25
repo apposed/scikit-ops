@@ -19,6 +19,12 @@ from __future__ import annotations
 import numpy as np
 from magicgui.experimental import guiclass
 
+try:
+    from cellpose import models
+    _is_cellpose_available = True
+except ImportError:
+    models = None
+    _is_cellpose_available = False
 
 @guiclass
 class CellposeCommand:
@@ -31,9 +37,20 @@ class CellposeCommand:
     cellprob_threshold: float = 0.0
     use_gpu: bool = True 
 
+    def are_dependencies_available(self) -> bool:
+        return _is_cellpose_available
+
+    def environment_path(self) -> str | None:
+        """Return the pinned remote env path for this command, or None."""
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "appose"))
+        from execute_appose import get_registry
+        env = get_registry().resolve(type(self).__name__)
+        return env.path if env is not None else None
+
     def segment(self, image: np.ndarray) -> np.ndarray:
         """Run CellposeSAM and return a uint16 label image."""
-        from cellpose import models
 
         gray = _to_gray(image)
 

@@ -26,7 +26,7 @@ from skimage import data
 # regardless of the current working directory.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from SegmenterSwitcherPanel import SegmenterSwitcherPanel  # noqa: E402
+from imgops.magicgui.SegmenterSwitcherPanel import SegmenterSwitcherPanel  # noqa: E402
 
 
 def main():

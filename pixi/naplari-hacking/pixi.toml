@@ -30,6 +30,7 @@ pytorch = "*"
 
 [pypi-dependencies]
 naplari-hacking = { path = "../..", editable = true }
+appose = "*"
 
 [tasks]
 register-kernel = "python -m ipykernel install --user --name=naplari-hacking --display-name 'naplari-hacking'"
