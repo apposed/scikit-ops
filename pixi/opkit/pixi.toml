@@ -1,5 +1,5 @@
 [project]
-name = "naplari-hacking"
+name = "opkit"
 authors = ["bnorthan <bnorthan@gmail.com>"]
 channels = ["conda-forge"]
 platforms = ["linux-64", "win-64", "osx-arm64"]
@@ -33,4 +33,4 @@ naplari-hacking = { path = "../..", editable = true }
 appose = "*"
 
 [tasks]
-register-kernel = "python -m ipykernel install --user --name=naplari-hacking --display-name 'naplari-hacking'"
+register-kernel = "python -m ipykernel install --user --name=opkit --display-name 'opkit'"
