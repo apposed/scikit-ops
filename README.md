@@ -8,6 +8,9 @@ run in its own isolated environment through
 [Appose](https://github.com/apposed/appose), or wrapped in a GUI. Nothing about
 the op changes between those modes.
 
+Design notes — why the machinery is shaped this way, and what else was
+considered — are in [`docs/`](docs/README.md).
+
 ## Layout
 
 ```
