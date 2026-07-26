@@ -11,7 +11,7 @@ from typing import Annotated
 
 import numpy as np
 
-from skop import op, progress
+from skop import Axes, Extra, op, progress
 from skop.types import ImageData, LabelsData
 
 from .._util import to_gray
@@ -26,7 +26,7 @@ class PretrainedModel(Enum):
 
 @op(env="stardist-tf")
 def stardist2d(
-    image: ImageData,
+    image: Annotated[ImageData, Axes("yxc?", extra=Extra.iterate)],
     model: PretrainedModel = PretrainedModel.fluo,
     prob_thresh: Annotated[
         float,
@@ -41,7 +41,8 @@ def stardist2d(
     """Detect objects in a 2D image with a pretrained StarDist model.
 
     Args:
-        image: Image to segment.
+        image: Plane to segment. A caller naming its axes may hand this a
+            stack instead, to be segmented one plane at a time.
         model: Which pretrained model to use. The fluorescence model wants a
             single channel; the H&E model wants RGB.
         prob_thresh: Object probability threshold.

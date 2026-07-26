@@ -13,11 +13,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from ._adapt import AdaptationPlan, plans
 from ._progress import cancel_requested, progress
 from ._spec import (
     COMPUTER,
     FUNCTION,
     INPLACE,
+    Axes,
+    Extra,
     Mut,
     OpSpec,
     Out,
@@ -33,6 +36,9 @@ __all__ = [
     "COMPUTER",
     "FUNCTION",
     "INPLACE",
+    "AdaptationPlan",
+    "Axes",
+    "Extra",
     "Mut",
     "OpSpec",
     "Out",
@@ -44,6 +50,7 @@ __all__ = [
     "discover",
     "is_op",
     "op",
+    "plans",
     "progress",
     "run",
     "spec",

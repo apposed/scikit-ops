@@ -39,6 +39,81 @@ class Role(Enum):
     vectors = "vectors"
 
 
+#: The axis vocabulary: the intersection of OME-NGFF, bioimage.io and
+#: ImgLib2's AxisType, so that mapping onto any of them stays a lookup.
+AXES = "xyzct"
+
+
+class Extra(Enum):
+    """What an op permits a caller to do with axes it does not consume.
+
+    ``iterate`` is a scientific claim -- that slices along those axes are
+    independent -- so only an op author can make it, and the default does
+    not make it for them.
+
+    Note that indexing a stack down to a single plane is *not* gated on
+    this. An op declaring ``"yx"`` said it accepts a plane; handing it one
+    honors the declaration. Iterating is the author's claim to make;
+    selecting is the user's decision.
+    """
+
+    reject = "reject"
+    iterate = "iterate"
+    passthrough = "passthrough"
+
+
+@dataclass(frozen=True)
+class Axes:
+    """The dimensional pattern an image parameter expects.
+
+    The pattern is a string over ``AXES``, in the order the op wants them,
+    where a trailing ``?`` marks an axis optional::
+
+        Axes("yx")                            # strictly 2-D
+        Axes("yxc?", extra=Extra.iterate)     # 2-D, tolerates channels,
+                                              # and may be mapped over z or t
+
+    Attached through ``Annotated``, like a role, and read back off
+    ``ParamSpec.axes``. It is inert at runtime: an op annotated this way is
+    still called with whatever the caller passes when called directly.
+    """
+
+    pattern: str
+    extra: Extra = Extra.reject
+
+    def __post_init__(self) -> None:
+        seen = set()
+        for axis in self.declared:
+            if axis not in AXES:
+                raise ValueError(
+                    f"Unknown axis {axis!r} in pattern {self.pattern!r}; "
+                    f"known axes are {', '.join(AXES)}"
+                )
+            if axis in seen:
+                raise ValueError(f"Repeated axis {axis!r} in pattern {self.pattern!r}")
+            seen.add(axis)
+
+    @property
+    def declared(self) -> tuple[str, ...]:
+        """Every axis in the pattern, required or not, in declared order."""
+        return tuple(char for char in self.pattern if char != "?")
+
+    @property
+    def core(self) -> tuple[str, ...]:
+        """The axes that must be present."""
+        return tuple(
+            char
+            for i, char in enumerate(self.pattern)
+            if char != "?" and self.pattern[i + 1 : i + 2] != "?"
+        )
+
+    @property
+    def optional(self) -> tuple[str, ...]:
+        """The axes the op tolerates but does not require."""
+        core = self.core
+        return tuple(axis for axis in self.declared if axis not in core)
+
+
 class _Direction:
     """Marker distinguishing input, output-buffer and mutated-buffer params."""
 
@@ -97,6 +172,14 @@ def role_of(annotation: Any) -> Role | None:
     return None
 
 
+def axes_of(annotation: Any) -> Axes | None:
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, Axes):
+                return meta
+    return None
+
+
 def _strip(annotation: Any) -> Any:
     """Return the underlying type of a possibly-Annotated annotation."""
     return (
@@ -122,6 +205,7 @@ class ParamSpec:
     direction: _Direction | None
     ui: dict = field(default_factory=dict)
     role: Role | None = None
+    axes: Axes | None = None
 
     @property
     def required(self) -> bool:
@@ -266,6 +350,7 @@ def spec(fn: Callable) -> OpSpec:
                 direction=direction_of(annotation),
                 ui=_ui_hints(annotation),
                 role=role_of(annotation),
+                axes=axes_of(annotation),
             )
         )
 

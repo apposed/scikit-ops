@@ -16,14 +16,14 @@ from typing import TYPE_CHECKING, Any
 import appose
 import numpy as np
 
-from . import _codec, _spec
+from . import _adapt, _codec, _spec
 
 if TYPE_CHECKING:
     from typing import Self
 
 # The script sent for every op call. Its last statement is an expression
 # yielding a dict, which Appose turns into the task's outputs.
-_CALL = "skop_invoke(task, module, function, kwargs)"
+_CALL = "skop_invoke(task, module, function, kwargs, plans)"
 
 # Installed into every worker via the service init script. Names defined here
 # become worker exports, and so are in scope for every task.
@@ -197,6 +197,9 @@ class Runner:
         args: dict | None = None,
         *,
         variant: str | None = None,
+        axes: dict[str, str] | None = None,
+        plans: dict[str, _adapt.AdaptationPlan] | None = None,
+        position: dict[str, int] | None = None,
         on_progress: Callable[[Any], None] | None = None,
         on_start: Callable[[Any], None] | None = None,
         **kwargs: Any,
@@ -209,6 +212,17 @@ class Runner:
                 the more convenient form when no argument name collides with
                 this method's own parameters.
             variant: Optional named pixi sub-environment (e.g. ``"cuda"``).
+            axes: What each array argument actually is, as ``{"image":
+                "zyx"}``. Naming them lets skop fit them to what the op
+                declared -- transposing, or iterating a 2-D op over a stack.
+                Unnamed arrays are passed through untouched, as before.
+            plans: Explicit ``AdaptationPlan``s, from ``skop.plans``, for
+                callers that want to make the choice themselves. Overrides
+                ``axes`` for the parameters it names. Supply one whenever the
+                adaptation would discard data: skop will not choose that
+                on its own.
+            position: Current position along each axis, used only when a
+                supplied plan or a chosen one indexes down to a single plane.
             on_progress: Called with each Appose TaskEvent as it arrives.
             on_start: Called with the Appose Task once it has been submitted.
                 This call blocks until the op finishes, so a caller wanting to
@@ -220,6 +234,7 @@ class Runner:
         call_args = dict(args or {})
         call_args.update(kwargs)
         _validate(spec, call_args)
+        adaptations = _adaptations(fn, call_args, axes, plans, position)
 
         service = self.service(spec, variant)
 
@@ -245,6 +260,7 @@ class Runner:
                     "module": spec.module,
                     "function": spec.function,
                     "kwargs": encoded,
+                    "plans": [plan.to_dict() for plan in adaptations.values()],
                 },
                 queue="main" if spec.main_thread else None,
             )
@@ -297,6 +313,29 @@ def _validate(spec: _spec.OpSpec, args: dict) -> None:
         raise TypeError(
             f"Op {spec.name} is missing required argument(s): {', '.join(missing)}"
         )
+
+
+def _adaptations(
+    fn: Callable,
+    args: dict,
+    axes: dict[str, str] | None,
+    plans: dict[str, _adapt.AdaptationPlan] | None,
+    position: dict[str, int] | None,
+) -> dict[str, _adapt.AdaptationPlan]:
+    """Settle on one plan per parameter whose array was given axis labels.
+
+    A parameter goes unadapted unless someone said something about it. That
+    keeps naming axes opt-in: an existing caller passing a bare array gets
+    exactly the behavior it got before.
+    """
+    chosen = dict(plans or {})
+    for name, labels in (axes or {}).items():
+        if name in chosen:
+            continue
+        chosen[name] = _adapt.choose(
+            _adapt.plans(fn, name, args[name], labels, position)
+        )
+    return chosen
 
 
 def _unpack(spec: _spec.OpSpec, outputs: dict, buffers: dict) -> Any:

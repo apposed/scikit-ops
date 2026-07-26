@@ -5,9 +5,11 @@ Ported from src/imgops/implementations/skimagessegmenter.py.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import numpy as np
 
-from skop import op
+from skop import Axes, Extra, op
 from skop.types import ImageData, LabelsData
 
 from ._util import to_gray
@@ -15,7 +17,7 @@ from ._util import to_gray
 
 @op(env="skimage")
 def otsu(
-    image: ImageData,
+    image: Annotated[ImageData, Axes("yxc?", extra=Extra.passthrough)],
     invert: bool = False,
     label_objects: bool = True,
 ) -> LabelsData:
