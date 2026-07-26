@@ -140,21 +140,29 @@ it holds here for the same reason: a front end guesses because a front end has
 a viewer to guess *for*. skop asks to be told, through
 `axes={"image": ("z", "y", "x")}`, and refuses to invent one.
 
-For skop-napari that means a resolver, in order: a user override stashed on the
-layer; `xarray.DataArray.dims` or NGFF `multiscales` axes; napari layer state
-(`layer.rgb` is decisive for a trailing `c`; `axis_labels` when they are not
-still the default `"0"`, `"1"`, …); `viewer.dims.order` and `ndisplay`, which
-give the displayed plane positionally without saying whether the slider axis is
-`z` or `t`; shape heuristics; and finally an axis editor.
+skop-napari has since built that resolver
+([its 0006](https://github.com/apposed/skop-napari/blob/main/docs/design/0006-axis-awareness.md)),
+which settled two things this file had guessed at.
 
-Two rules keep that friendly rather than nagging. Write the resolution **back**
-onto the layer, and stamp axes onto layers the plugin creates, so inference
-improves over a session instead of repeating. And confirm with the user based
-on **the consequence, not the confidence**: a weak guess is fine when the op
-will iterate over the unknown axis anyway — `z` versus `t` changes nothing —
-and needs confirming when the plan would discard data. Note that an axis a
-resolver cannot name at all is still usable: label it `"dim0"` and it iterates
-like any other.
+**Writing the answer back is the load-bearing half.** Every resolution goes
+onto the layer, and every result layer is stamped with `axis_labels` and the
+plan's `output_axes`. Guessing then happens once per layer rather than once per
+run, a correction stays corrected, and a chain of ops gets more certain as it
+goes instead of re-deriving the same guess.
+
+**Confirming "on the consequence, not the confidence" needed no prompt.**
+Because `plans()` returns lossless candidates first, a combo box in that order
+*is* the rule: the default never discards data, and the plan that does is one
+visible click away rather than behind a modal. The confirmation dialog this
+file expected turned out to be the ordering it already had.
+
+And one hazard worth recording here, because it constrains what a *guess* may
+contain rather than what skop does with it: convention must never invent an
+axis name an op might consume. Every image op declares `Axes.pack("yxc?")`, so
+a guessed `c` is not iterated over — it is taken as the channel axis, and
+`to_gray` averages across it. A guessed `t` has no such failure mode, since no
+op declares `t`. An axis a resolver cannot name at all is likewise safe as
+`"dim0"`: it satisfies no declaration, so it can only be iterated or rejected.
 
 ### Adaptation — skop, as a value rather than as control flow
 
