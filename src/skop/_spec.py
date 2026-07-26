@@ -39,9 +39,35 @@ class Role(Enum):
     vectors = "vectors"
 
 
-#: The axis vocabulary: the intersection of OME-NGFF, bioimage.io and
-#: ImgLib2's AxisType, so that mapping onto any of them stays a lookup.
-AXES = "xyzct"
+#: Axis names that a viewer can map onto display semantics: the intersection
+#: of OME-NGFF, bioimage.io and ImgLib2's AxisType. Privileged, not exclusive
+#: -- an axis label is any string, because there is no agreed letter for a
+#: lifetime bin, a well, or a polarization angle, and n-D means n-D.
+CANONICAL = ("x", "y", "z", "c", "t")
+
+
+def pack(pattern: str) -> tuple[str, ...]:
+    """Read a compact pattern as one axis label per character.
+
+    ``pack("yxc?")`` is ``("y", "x", "c?")``. This is the shorthand for the
+    common case, spelled out rather than inferred: everywhere else in skop, one
+    string is one axis label, so that a multi-character label like ``"well"``
+    is never mistaken for four axes and ``"ct"`` is never mistaken for two.
+    """
+    labels: list[str] = []
+    for char in pattern:
+        if char == "?":
+            if not labels or labels[-1].endswith("?"):
+                raise ValueError(f"Stray '?' in packed pattern {pattern!r}")
+            labels[-1] += "?"
+        elif char.isspace() or char == ",":
+            raise ValueError(
+                f"Packed pattern {pattern!r} has a separator in it. Packing is "
+                "one axis per character; pass separate labels instead."
+            )
+        else:
+            labels.append(char)
+    return tuple(labels)
 
 
 class Extra(Enum):
@@ -52,8 +78,8 @@ class Extra(Enum):
     not make it for them.
 
     Note that indexing a stack down to a single plane is *not* gated on
-    this. An op declaring ``"yx"`` said it accepts a plane; handing it one
-    honors the declaration. Iterating is the author's claim to make;
+    this. An op declaring ``("y", "x")`` said it accepts a plane; handing it
+    one honors the declaration. Iterating is the author's claim to make;
     selecting is the user's decision.
     """
 
@@ -62,56 +88,94 @@ class Extra(Enum):
     passthrough = "passthrough"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class Axes:
-    """The dimensional pattern an image parameter expects.
+    """The axes an image parameter expects, in the order it wants them.
 
-    The pattern is a string over ``AXES``, in the order the op wants them,
-    where a trailing ``?`` marks an axis optional::
+    One argument is one axis label, and a trailing ``?`` marks that axis
+    optional::
 
-        Axes("yx")                            # strictly 2-D
-        Axes("yxc?", extra=Extra.iterate)     # 2-D, tolerates channels,
-                                              # and may be mapped over z or t
+        Axes("y", "x")                             # strictly 2-D
+        Axes("y", "x", "c?", extra=Extra.iterate)  # 2-D, tolerates channels,
+                                                   # may be mapped over others
+        Axes.pack("yxc?", extra=Extra.iterate)     # the same, in shorthand
+
+    A label is any string. ``CANONICAL`` names are privileged only in that a
+    viewer knows how to display them; ``Axes("lifetime", "y", "x")`` is
+    equally valid, and an op that merely iterates over an axis never needs to
+    know what it means.
 
     Attached through ``Annotated``, like a role, and read back off
     ``ParamSpec.axes``. It is inert at runtime: an op annotated this way is
     still called with whatever the caller passes when called directly.
     """
 
-    pattern: str
-    extra: Extra = Extra.reject
+    names: tuple[str, ...]
+    optional: frozenset[str]
+    extra: Extra
 
-    def __post_init__(self) -> None:
-        seen = set()
-        for axis in self.declared:
-            if axis not in AXES:
-                raise ValueError(
-                    f"Unknown axis {axis!r} in pattern {self.pattern!r}; "
-                    f"known axes are {', '.join(AXES)}"
-                )
-            if axis in seen:
-                raise ValueError(f"Repeated axis {axis!r} in pattern {self.pattern!r}")
-            seen.add(axis)
+    def __init__(self, *names: str, extra: Extra = Extra.reject) -> None:
+        # Note: frozen blocks ordinary assignment, so a hand-written __init__
+        # has to set fields the way dataclass itself does. Storing the parsed
+        # labels rather than the raw text is what makes Axes.pack("zyx") and
+        # Axes("z", "y", "x") compare equal, as they should.
+        parsed, optional = _parse_labels(names)
+        object.__setattr__(self, "names", parsed)
+        object.__setattr__(self, "optional", frozenset(optional))
+        object.__setattr__(self, "extra", extra)
 
-    @property
-    def declared(self) -> tuple[str, ...]:
-        """Every axis in the pattern, required or not, in declared order."""
-        return tuple(char for char in self.pattern if char != "?")
+    @classmethod
+    def pack(cls, pattern: str, *, extra: Extra = Extra.reject) -> Axes:
+        """Build from a compact pattern, one axis per character."""
+        return cls(*pack(pattern), extra=extra)
 
     @property
     def core(self) -> tuple[str, ...]:
         """The axes that must be present."""
-        return tuple(
-            char
-            for i, char in enumerate(self.pattern)
-            if char != "?" and self.pattern[i + 1 : i + 2] != "?"
-        )
+        return tuple(name for name in self.names if name not in self.optional)
 
-    @property
-    def optional(self) -> tuple[str, ...]:
-        """The axes the op tolerates but does not require."""
-        core = self.core
-        return tuple(axis for axis in self.declared if axis not in core)
+    def __repr__(self) -> str:
+        shown = ", ".join(
+            repr(name + "?" if name in self.optional else name) for name in self.names
+        )
+        return f"Axes({shown}, extra={self.extra})"
+
+
+def _parse_labels(names: tuple[str, ...]) -> tuple[tuple[str, ...], list[str]]:
+    """Validate axis labels, splitting off the ones marked optional.
+
+    A lone argument made entirely of canonical letters is refused, since it is
+    almost certainly a packed pattern written by hand -- the one footgun the
+    one-string-one-label rule leaves. Only a lone argument is suspect, so
+    ``Axes("ct", "y", "x")`` passes untouched; the accepted cost is that a
+    lone axis named ``ct`` cannot be declared.
+    """
+    if len(names) == 1:
+        lone = names[0].removesuffix("?") if isinstance(names[0], str) else ""
+        if len(lone) > 1 and all(char in CANONICAL for char in lone):
+            unpacked = pack(names[0])
+            raise ValueError(
+                f"Axes({names[0]!r}) declares one axis named {lone!r}. If you "
+                f"meant {len(unpacked)} axes, write Axes.pack({names[0]!r}) or "
+                f"Axes({', '.join(repr(label) for label in unpacked)})."
+            )
+    parsed: list[str] = []
+    optional: list[str] = []
+    for label in names:
+        if not isinstance(label, str) or not label.strip("?"):
+            raise ValueError(f"Axis label {label!r} is not a non-empty string")
+        if any(char.isspace() or char == "," for char in label):
+            raise ValueError(
+                f"Axis label {label!r} has a separator in it; pass one label "
+                "per argument, as Axes('z', 'y', 'x')."
+            )
+        name = label.removesuffix("?")
+        if name in parsed:
+            raise ValueError(f"Repeated axis {name!r} in {names}")
+        parsed.append(name)
+        if label.endswith("?"):
+            optional.append(name)
+    return tuple(parsed), optional
 
 
 class _Direction:

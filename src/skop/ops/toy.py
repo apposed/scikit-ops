@@ -61,7 +61,7 @@ def scale_into(
 
 @op(env="minimal")
 def quadrants(
-    image: Annotated[ImageData, Axes("yx", extra=Extra.iterate)],
+    image: Annotated[ImageData, Axes("y", "x", extra=Extra.iterate)],
 ) -> LabelsData:
     """Label a plane's four quadrants, 1 through 4.
 

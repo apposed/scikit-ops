@@ -26,7 +26,7 @@ class PretrainedModel(Enum):
 
 @op(env="stardist-tf")
 def stardist2d(
-    image: Annotated[ImageData, Axes("yxc?", extra=Extra.iterate)],
+    image: Annotated[ImageData, Axes.pack("yxc?", extra=Extra.iterate)],
     model: PretrainedModel = PretrainedModel.fluo,
     prob_thresh: Annotated[
         float,

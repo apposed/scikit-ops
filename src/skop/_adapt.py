@@ -72,8 +72,25 @@ class AdaptationPlan:
 
 
 def normalize_axes(axes: str | Sequence[str]) -> tuple[str, ...]:
-    """Accept either ``"zyx"`` or ``("z", "y", "x")``."""
-    return tuple(axes) if isinstance(axes, str) else tuple(str(a) for a in axes)
+    """Read a caller's axis labels, under the one-string-one-label rule.
+
+    ``("lifetime", "y", "x")`` is three axes and ``"c"`` is one. A lone
+    canonical-looking string like ``"zyx"`` is refused rather than guessed
+    at, the same way ``Axes`` refuses it; ``skop.pack`` spells the shorthand.
+    """
+    if isinstance(axes, str):
+        if len(axes) > 1 and all(char in _spec.CANONICAL for char in axes):
+            raise ValueError(
+                f"{axes!r} is one axis label. If you meant {len(axes)} axes, "
+                f"write skop.pack({axes!r}) or {tuple(axes)}."
+            )
+        return (axes,)
+    return tuple(str(label) for label in axes)
+
+
+def _show(axes: Sequence[str]) -> str:
+    """Axis labels as an error message wants them: readable, multi-character."""
+    return ", ".join(axes)
 
 
 def plans(
@@ -128,7 +145,7 @@ def _candidates(
     _check_actual(param, actual, shape)
 
     sizes = dict(zip(actual, shape))
-    present = tuple(axis for axis in declared.declared if axis in actual)
+    present = tuple(axis for axis in declared.names if axis in actual)
     extra = tuple(axis for axis in actual if axis not in present)
 
     if not extra:
@@ -218,24 +235,15 @@ def _check_actual(
     if len(actual) != len(shape):
         raise ValueError(
             f"Parameter {param.name!r}: {len(actual)} axis label(s) "
-            f"{''.join(actual)} for a {len(shape)}-dimensional array {tuple(shape)}"
-        )
-    unknown = [axis for axis in actual if axis not in _spec.AXES]
-    if unknown:
-        raise ValueError(
-            f"Parameter {param.name!r}: unknown axis label(s) "
-            f"{', '.join(repr(a) for a in unknown)}; "
-            f"known axes are {', '.join(_spec.AXES)}"
+            f"({_show(actual)}) for a {len(shape)}-dimensional array {tuple(shape)}"
         )
     if len(set(actual)) != len(actual):
-        raise ValueError(
-            f"Parameter {param.name!r}: repeated axis in {''.join(actual)}"
-        )
+        raise ValueError(f"Parameter {param.name!r}: repeated axis in {_show(actual)}")
     missing = [axis for axis in declared.core if axis not in actual]
     if missing:
         raise ValueError(
-            f"Parameter {param.name!r} needs axes {declared.pattern!r} but was "
-            f"given {''.join(actual)}, which has no {', '.join(missing)} axis. "
+            f"Parameter {param.name!r} needs axes {_show(declared.names)} but was "
+            f"given {_show(actual)}, which has no {', '.join(missing)} axis. "
             "No adaptation can invent one."
         )
 
@@ -252,7 +260,7 @@ def choose(candidates: list[AdaptationPlan]) -> AdaptationPlan:
         return best
     options = "\n".join(f"  - {plan.summary}" for plan in candidates)
     raise ValueError(
-        f"Parameter {best.param!r} was given axes {''.join(best.input_axes)}, "
+        f"Parameter {best.param!r} was given axes {_show(best.input_axes)}, "
         "which the op does not accept, and every way of adapting it would "
         f"discard data. Choose one explicitly:\n{options}"
     )

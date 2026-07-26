@@ -28,14 +28,50 @@ The same mechanism roles use, so the two compose:
 ```python
 @op(env="stardist-tf")
 def stardist2d(
-    image: Annotated[ImageData, Axes("yxc?", extra=Extra.iterate)],
+    image: Annotated[ImageData, Axes.pack("yxc?", extra=Extra.iterate)],
 ) -> LabelsData: ...
 ```
 
-`Axes` takes a pattern over `AXES` — `x y z c t`, the intersection of OME-NGFF,
-bioimage.io and ImgLib2's `AxisType`, so that mapping onto any of them stays a
-lookup rather than a translation. A trailing `?` marks an axis optional:
-`"yxc?"` is "two spatial axes, and I cope with a channel axis if one is there".
+`Axes` takes one axis label per argument, where a trailing `?` marks that axis
+optional. `Axes.pack("yxc?")` is shorthand for `Axes("y", "x", "c?")`: "two
+spatial axes, and I cope with a channel axis if one is there".
+
+**An axis label is any string**, and that is deliberate. `CANONICAL` — `x y z c
+t`, the intersection of OME-NGFF, bioimage.io and ImgLib2's `AxisType` — is
+privileged only in that a viewer knows how to *display* those; it is not the
+vocabulary. There is no agreed letter for a lifetime bin, a well, an excitation
+wavelength or a polarization angle, and napari is n-D precisely to carry them.
+`Axes("lifetime", "y", "x")` is as valid as `Axes.pack("zyx")`.
+
+Almost nothing pays for that openness, because an axis an op does not consume
+is one it never has to understand: the planner needs axis *identity and order*,
+never meaning, so `Extra.iterate` maps over a lifetime axis exactly as it maps
+over `z`. Only an op that genuinely consumes an exotic axis — a decay fit
+wanting `("lifetime", "y", "x")` — needs to name one, and now it can.
+
+We took names only, not OME-NGFF's `name` *plus* a closed `type` enum. A
+non-extensible enum re-imposes the very ceiling this removes, and physical
+units and scale factors want to arrive alongside axis types anyway. `Axes` can
+grow a per-axis type later without disturbing the label syntax.
+
+### One string is one label
+
+The rule that keeps the shorthand from becoming an ambiguity. `Axes("ct")` is
+one axis named `ct`; `Axes.pack("ct")` is two. The caller's side obeys the same
+rule — `axes={"image": ("lifetime", "y", "x")}`, or `skop.pack("zyx")` for the
+compact form — so a string never means different things in different places.
+
+That leaves exactly one footgun: an author writing `Axes("zyx")` and silently
+getting a single axis named `zyx`. A **lone** argument made entirely of
+canonical letters is therefore refused outright, with an error naming both
+fixes. Only a lone argument is suspect, so `Axes("ct", "y", "x")` passes
+untouched. The accepted cost is that a lone axis named `ct` cannot be declared.
+
+`Axes` is a frozen dataclass with `init=False` and a hand-written `__init__`,
+since a generated one cannot take `*args`. It stores the *parsed* labels rather
+than the raw text, which is what makes `Axes.pack("zyx") == Axes("z","y","x")`.
+
+### The extra-axis policy
 
 `extra` is the policy for axes the op does not consume:
 
@@ -52,8 +88,8 @@ does not make it for them.
 
 Note what is deliberately *not* gated on it: indexing a stack down to one
 plane is always available, whatever `extra` says, because an op declaring
-`"yx"` said it accepts a plane and a plane is what it gets. Iterating is the
-author's claim to make; selecting is the user's decision.
+`("y", "x")` said it accepts a plane and a plane is what it gets. Iterating is
+the author's claim to make; selecting is the user's decision.
 
 `ParamSpec.axes` carries it to front ends, alongside `role`.
 
@@ -62,8 +98,8 @@ author's claim to make; selecting is the user's decision.
 Which axes an array *has* is a guess.
 [front-ends.md](../spec/front-ends.md) already holds this line for roles, and
 it holds here for the same reason: a front end guesses because a front end has
-a viewer to guess *for*. skop asks to be told, through `axes={"image": "zyx"}`,
-and refuses to invent one.
+a viewer to guess *for*. skop asks to be told, through
+`axes={"image": ("z", "y", "x")}`, and refuses to invent one.
 
 For skop-napari that means a resolver, in order: a user override stashed on the
 layer; `xarray.DataArray.dims` or NGFF `multiscales` axes; napari layer state
@@ -77,7 +113,9 @@ onto the layer, and stamp axes onto layers the plugin creates, so inference
 improves over a session instead of repeating. And confirm with the user based
 on **the consequence, not the confidence**: a weak guess is fine when the op
 will iterate over the unknown axis anyway — `z` versus `t` changes nothing —
-and needs confirming when the plan would discard data.
+and needs confirming when the plan would discard data. Note that an axis a
+resolver cannot name at all is still usable: label it `"dim0"` and it iterates
+like any other.
 
 ### Adaptation — skop, as a value rather than as control flow
 
@@ -123,6 +161,10 @@ existing caller and test kept passing unchanged.
 
 ## Limits, accepted knowingly
 
+**A lone axis named after canonical letters** — `Axes("ct")` — cannot be
+declared, since that spelling is reserved for catching a mis-written packed
+pattern.
+
 **Axis requirements that depend on another parameter.** `stardist2d`'s `model`
 selects between a fluorescence model wanting one channel and an H&E model
 wanting three. The pattern declares the union — `c` optional — and the op body
@@ -158,8 +200,16 @@ interpretation stays home.
 ## Still open
 
 - Whether `Extra.passthrough` earns its keep, or whether an op that handles its
-  own extra axes should simply declare them (`"zyx"`) and be done. `otsu` is
-  the only user.
+  own extra axes should simply declare them (`Axes.pack("zyx")`) and be done.
+  `otsu` is the only user.
+- **Synonyms.** scikit-image says `(pln, row, col)`, NGFF says `(z, y, x)`, and
+  a front end may report either. Nothing resolves one to the other today, so an
+  op declaring `y` refuses an array labelled `row` with a confident, useless
+  "no y axis" — the open vocabulary makes that failure more likely, not less. A
+  small alias table (`row→y`, `col→x`, `pln→z`, `ch|channel→c`, `frame→t`, plus
+  case folding) belongs in skop rather than in each front end, since it is a
+  synonym lookup and not a guess: unrecognized labels would pass through
+  untouched. Deliberately not built here, to keep this change to one idea.
 - Whether output axes need declaring. Today `AdaptationPlan.output_axes` is
   derived — iterated axes, then the input's core axes — which is right for
   every current op and wrong for a projection.

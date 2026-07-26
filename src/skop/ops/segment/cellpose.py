@@ -17,7 +17,7 @@ from .._util import to_gray
 
 @op(env="cellpose")
 def cellpose(
-    image: Annotated[ImageData, Axes("yxc?", extra=Extra.iterate)],
+    image: Annotated[ImageData, Axes.pack("yxc?", extra=Extra.iterate)],
     diameter: Annotated[
         float,
         {"widget_type": "FloatSpinBox", "min": 0.0, "max": 1000.0, "step": 1.0},
