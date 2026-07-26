@@ -78,4 +78,5 @@ testpaths = ["tests"]
 addopts = "--strict-markers"
 markers = [
     "env(env_id): needs op environment <env_id>; skipped unless it is already built or --build-envs is passed",
+    "gpu: needs an NVIDIA GPU; skipped when none is present, --build-envs or not",
 ]

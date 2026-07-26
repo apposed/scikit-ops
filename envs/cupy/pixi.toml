@@ -1,0 +1,21 @@
+[workspace]
+name = "skop-cupy"
+description = "GPU array computing on CUDA, with cupy."
+channels = ["conda-forge"]
+# No macOS: CUDA is not available there. Listing a platform this env cannot
+# resolve on would turn a clean "no such platform" into a solver failure.
+platforms = ["linux-64", "win-64"]
+version = "0.1.0"
+
+[system-requirements]
+cuda = "12.0"
+
+[dependencies]
+python = "3.11.*"
+numpy = "*"
+cupy = "*"
+# NB: pinned as envs/cellpose pins it. cuda-version selects which CUDA runtime
+# the packages are built against, and it must not exceed what the installed
+# driver supports.
+cuda-version = "12.2"
+appose = ">=0.11"

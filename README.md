@@ -28,6 +28,9 @@ sharing an environment also share a warm worker process, unless one asks for
 | Op | Environment | Does |
 | --- | --- | --- |
 | `skop.ops.threshold:otsu` | `skimage` | Otsu thresholding |
+| `skop.ops.kernels.psf:gaussian_psf` | `skimage` | Gaussian PSF, 2D or 3D |
+| `skop.ops.deconvolve.richardson_lucy:richardson_lucy` | `skimage` | Richardson-Lucy, on the CPU |
+| `skop.ops.deconvolve.richardson_lucy_cupy:richardson_lucy_cupy` | `cupy` | Richardson-Lucy, on an NVIDIA GPU |
 | `skop.ops.segment.cellpose:cellpose` | `cellpose` | Cellpose segmentation |
 | `skop.ops.segment.stardist2d:stardist2d` | `stardist-tf` | StarDist 2D, pretrained |
 | `skop.ops.segment.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
@@ -49,10 +52,16 @@ worker — the point of naming environments rather than tying them to ops.
 `unseg-cv` shares nothing with anything: it pins Python 3.9, numpy 1.24 and an
 old scikit-image, which is exactly why it needs an environment of its own.
 
+The two Richardson-Lucy ops are the same algorithm against different hardware,
+and there are two of them because `@op(env=...)` is fixed per function — a
+backend cannot be chosen at call time. Their signatures are identical and a
+test holds them numerically equivalent, so picking one is picking on speed.
+
 To list what the collection currently offers:
 
 ```python
 import skop
+
 specs, failures = skop.discover()
 ```
 

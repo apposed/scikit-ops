@@ -21,7 +21,7 @@ def test_every_op_module_imports():
 
 
 def test_collection_is_not_empty():
-    assert len(SPECS) >= 12
+    assert len(SPECS) >= 15
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
@@ -64,3 +64,23 @@ def test_unseg_reports_counts_alongside_masks():
 def test_starfun3d_returns_labels_and_points():
     spec = BY_NAME["skop.ops.segment.starfun3d:segment_nuclei"]
     assert spec.outputs == ("labels", "points")
+
+
+def test_deconvolution_backends_differ_only_in_environment():
+    # The reason there are two ops rather than one with a backend argument:
+    # @op(env=...) is fixed per function. Their signatures must stay identical,
+    # so that choosing a backend is choosing on speed alone.
+    cpu = BY_NAME["skop.ops.deconvolve.richardson_lucy:richardson_lucy"]
+    gpu = BY_NAME["skop.ops.deconvolve.richardson_lucy_cupy:richardson_lucy_cupy"]
+
+    assert cpu.env == "skimage"
+    assert gpu.env == "cupy"
+    assert [(p.name, p.type, p.default) for p in cpu.params] == [
+        (p.name, p.type, p.default) for p in gpu.params
+    ]
+    assert cpu.return_type is gpu.return_type
+
+
+def test_gaussian_psf_needs_no_environment_of_its_own():
+    # A PSF is just numpy, so it shares the environment already there.
+    assert BY_NAME["skop.ops.kernels.psf:gaussian_psf"].env == "skimage"

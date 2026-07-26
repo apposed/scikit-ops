@@ -41,6 +41,32 @@ def blobs_2d(size: int = 128, sigma: float = 7.0) -> np.ndarray:
     return (image / image.max() * 255).astype(np.uint16)
 
 
+def blur(image: np.ndarray, psf: np.ndarray) -> np.ndarray:
+    """Circularly convolve an image with a psf of the same shape, via FFT."""
+    return np.real(
+        np.fft.ifftn(np.fft.fftn(image) * np.fft.fftn(np.fft.ifftshift(psf)))
+    )
+
+
+def rmse(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.sqrt(np.mean((a - b) ** 2)))
+
+
+def points_2d(size: int = 64) -> np.ndarray:
+    """Point sources, the hardest thing to deconvolve and the clearest."""
+    truth = np.zeros((size, size))
+    quarter, half, three = size // 4, size // 2, 3 * size // 4
+    for cy, cx in [
+        (quarter, quarter),
+        (quarter, three),
+        (three, quarter),
+        (three, three),
+        (half, half),
+    ]:
+        truth[cy, cx] = 100.0
+    return truth
+
+
 @pytest.mark.env("skimage")
 def test_otsu(runner):
     from skop.ops.threshold import otsu
@@ -132,6 +158,159 @@ def test_starfun3d_honors_model_choice(runner):
     for model in (Model.sospim, Model.confocal):
         result = runner.run(segment_nuclei, image=volume, model=model)
         assert result.labels.shape == volume.shape
+
+
+@pytest.mark.env("skimage")
+def test_gaussian_psf(runner):
+    from skop.ops.kernels import gaussian_psf
+
+    psf = runner.run(gaussian_psf, xy_dim=15, xy_sigma=2.0)
+    assert psf.shape == (15, 15)
+    assert psf.sum() == pytest.approx(1.0)
+    assert psf.argmax() == np.ravel_multi_index((7, 7), psf.shape)
+
+    volume_psf = runner.run(gaussian_psf, xy_dim=15, xy_sigma=4.0, z_dim=9, z_sigma=1.0)
+    assert volume_psf.shape == (9, 15, 15)
+    assert volume_psf.sum() == pytest.approx(1.0)
+    # Anisotropy is the whole point of a 3D psf: tight in Z, broad in XY. This
+    # is also what catches the axes being transposed.
+    above_half = volume_psf > volume_psf.max() / 2
+    assert above_half[:, 7, 7].sum() < above_half[4, 7, :].sum()
+
+
+@pytest.mark.env("skimage")
+def test_richardson_lucy_recovers_a_blurred_image(runner):
+    from skop.ops.deconvolve import richardson_lucy
+    from skop.ops.kernels import gaussian_psf
+
+    truth = points_2d()
+    psf = runner.run(gaussian_psf, xy_dim=64, xy_sigma=2.0)
+    blurred = blur(truth, psf)
+
+    result = runner.run(richardson_lucy, image=blurred, psf=psf, num_iters=50)
+
+    assert result.shape == truth.shape
+    # The assertion that actually means something: closer to the truth than
+    # what went in. A shape check would pass on an op that returned its input.
+    assert rmse(result, truth) < rmse(blurred, truth)
+    assert result.max() > blurred.max()
+
+
+@pytest.mark.env("skimage")
+def test_richardson_lucy_takes_a_psf_smaller_than_the_image(runner):
+    from skop.ops.deconvolve import richardson_lucy
+    from skop.ops.kernels import gaussian_psf
+
+    truth = points_2d()
+    psf = runner.run(gaussian_psf, xy_dim=64, xy_sigma=2.0)
+    small = runner.run(gaussian_psf, xy_dim=15, xy_sigma=2.0)
+    blurred = blur(truth, psf)
+
+    result = runner.run(richardson_lucy, image=blurred, psf=small, num_iters=30)
+    assert result.shape == truth.shape
+    assert rmse(result, truth) < rmse(blurred, truth)
+
+
+@pytest.mark.env("skimage")
+def test_richardson_lucy_noncirc_handles_signal_at_the_edge(runner):
+    from skop.ops.deconvolve import richardson_lucy
+    from skop.ops.kernels import gaussian_psf
+
+    # An object against the border is the case non-circulant handling exists
+    # for; away from the edges the two modes agree to nine decimal places.
+    truth = np.zeros((64, 64))
+    truth[1:6, 1:6] = 100.0
+    truth[30:35, 30:35] = 100.0
+    psf = runner.run(gaussian_psf, xy_dim=64, xy_sigma=3.0)
+    small = runner.run(gaussian_psf, xy_dim=21, xy_sigma=3.0)
+    blurred = blur(truth, psf)
+
+    circ = runner.run(richardson_lucy, image=blurred, psf=small, num_iters=50)
+    noncirc = runner.run(
+        richardson_lucy, image=blurred, psf=small, num_iters=50, noncirc=True
+    )
+
+    assert noncirc.shape == truth.shape
+    assert rmse(noncirc, truth) < rmse(circ, truth)
+
+
+@pytest.mark.env("skimage")
+def test_richardson_lucy_restores_masked_pixels(runner):
+    from skop.ops.deconvolve import richardson_lucy
+    from skop.ops.kernels import gaussian_psf
+
+    psf = runner.run(gaussian_psf, xy_dim=64, xy_sigma=2.0)
+    blurred = blur(points_2d(), psf)
+
+    mask = np.ones_like(blurred)
+    mask[0:5, 0:5] = 0.0
+    damaged = blurred.copy()
+    damaged[0:5, 0:5] = 9999.0  # a saturated corner
+
+    result = runner.run(
+        richardson_lucy, image=damaged, psf=psf, num_iters=20, mask=mask
+    )
+    # Masked pixels come back untouched, and do not smear into their surroundings.
+    assert np.allclose(result[0:5, 0:5], 9999.0)
+    assert result[10:, 10:].max() < 9999.0
+
+
+@pytest.mark.env("skimage")
+def test_richardson_lucy_reports_progress(runner):
+    from skop.ops.deconvolve import richardson_lucy
+    from skop.ops.kernels import gaussian_psf
+
+    psf = runner.run(gaussian_psf, xy_dim=32, xy_sigma=2.0)
+    image = blur(points_2d(32), psf)
+
+    messages = []
+    runner.run(
+        richardson_lucy,
+        image=image,
+        psf=psf,
+        num_iters=5,
+        on_progress=lambda event: messages.append(event.message),
+    )
+    assert any(m and "Iteration" in m for m in messages)
+
+
+@pytest.mark.gpu
+@pytest.mark.env("cupy")
+def test_richardson_lucy_cupy_recovers_a_blurred_image(runner):
+    from skop.ops.deconvolve import richardson_lucy_cupy
+
+    truth = points_2d()
+    # NB: generated here rather than through the skimage env, so this test
+    # needs only the one environment it declares.
+    coords = np.linspace(-32, 32, 64)
+    profile = np.exp(-(coords**2) / (2.0 * 2.0**2))
+    psf = profile[:, np.newaxis] * profile[np.newaxis, :]
+    psf /= psf.sum()
+    blurred = blur(truth, psf)
+
+    result = runner.run(richardson_lucy_cupy, image=blurred, psf=psf, num_iters=50)
+
+    assert result.shape == truth.shape
+    assert rmse(result, truth) < rmse(blurred, truth)
+
+
+@pytest.mark.gpu
+@pytest.mark.env("cupy")
+@pytest.mark.env("skimage")
+def test_both_backends_agree(runner):
+    from skop.ops.deconvolve import richardson_lucy, richardson_lucy_cupy
+    from skop.ops.kernels import gaussian_psf
+
+    psf = runner.run(gaussian_psf, xy_dim=64, xy_sigma=2.0)
+    blurred = blur(points_2d(), psf)
+
+    cpu = runner.run(richardson_lucy, image=blurred, psf=psf, num_iters=25)
+    gpu = runner.run(richardson_lucy_cupy, image=blurred, psf=psf, num_iters=25)
+
+    # Loosely: the two run the same iteration, but cupy's FFT is single
+    # precision and numpy's is double, and 25 iterations compound the gap.
+    assert gpu.shape == cpu.shape
+    assert rmse(gpu, cpu) < 0.01 * cpu.max()
 
 
 @pytest.mark.env("unseg-cv")
