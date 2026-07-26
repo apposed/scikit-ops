@@ -74,18 +74,19 @@ class AdaptationPlan:
 def normalize_axes(axes: str | Sequence[str]) -> tuple[str, ...]:
     """Read a caller's axis labels, under the one-string-one-label rule.
 
-    ``("lifetime", "y", "x")`` is three axes and ``"c"`` is one. A lone
-    canonical-looking string like ``"zyx"`` is refused rather than guessed
-    at, the same way ``Axes`` refuses it; ``skop.pack`` spells the shorthand.
+    ``("lifetime", "y", "x")`` is three axes and ``"c"`` is one; ``list("zyx")``
+    is the compact spelling. A lone canonical-looking string like ``"zyx"`` is
+    refused rather than guessed at, the same way ``Axes`` refuses it. Labels
+    resolve through ``canonical``, so ``("pln", "row", "col")`` is ``zyx``.
     """
     if isinstance(axes, str):
-        if len(axes) > 1 and all(char in _spec.CANONICAL for char in axes):
+        if len(axes) > 1 and all(char in _spec.CANONICAL for char in axes.casefold()):
             raise ValueError(
                 f"{axes!r} is one axis label. If you meant {len(axes)} axes, "
-                f"write skop.pack({axes!r}) or {tuple(axes)}."
+                f"write list({axes!r})."
             )
-        return (axes,)
-    return tuple(str(label) for label in axes)
+        return (_spec.canonical(axes),)
+    return tuple(_spec.canonical(str(label)) for label in axes)
 
 
 def _show(axes: Sequence[str]) -> str:

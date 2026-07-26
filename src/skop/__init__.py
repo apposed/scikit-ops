@@ -29,7 +29,6 @@ from ._spec import (
     Role,
     is_op,
     op,
-    pack,
     spec,
 )
 
@@ -51,7 +50,6 @@ __all__ = [
     "discover",
     "is_op",
     "op",
-    "pack",
     "plans",
     "progress",
     "run",

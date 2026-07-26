@@ -152,7 +152,7 @@ def test_a_2d_op_iterates_over_a_stack_in_the_worker(runner):
     # Naming the axes is what unlocks this: quadrants is strictly 2-D, and
     # the whole stack crosses the boundary once, not once per plane.
     stack = np.zeros((3, 8, 6), dtype=np.float32)
-    labels = runner.run(toy.quadrants, image=stack, axes={"image": skop.pack("zyx")})
+    labels = runner.run(toy.quadrants, image=stack, axes={"image": list("zyx")})
 
     assert labels.shape == (3, 8, 6)
     assert labels.max() == 12  # Four quadrants per plane, renumbered.
@@ -163,7 +163,7 @@ def test_iteration_reports_progress_per_slice(runner):
     runner.run(
         toy.quadrants,
         image=np.zeros((4, 8, 6), dtype=np.float32),
-        axes={"image": skop.pack("zyx")},
+        axes={"image": list("zyx")},
         on_progress=lambda event: seen.append(event),
     )
     assert any("Slice 4 of 4" in str(getattr(e, "message", "")) for e in seen)
@@ -172,16 +172,12 @@ def test_iteration_reports_progress_per_slice(runner):
 def test_an_unusable_input_is_refused_before_dispatch(runner):
     # Planning happens on the host, so a hopeless call never reaches a worker.
     with pytest.raises(ValueError, match="no y axis"):
-        runner.run(
-            toy.quadrants, image=np.zeros((3, 6)), axes={"image": skop.pack("zx")}
-        )
+        runner.run(toy.quadrants, image=np.zeros((3, 6)), axes={"image": list("zx")})
 
 
 def test_a_chosen_plan_is_obeyed(runner):
     stack = np.arange(3 * 8 * 6, dtype=np.float32).reshape(3, 8, 6)
-    plan = skop.plans(
-        toy.quadrants, "image", stack, skop.pack("zyx"), position={"z": 2}
-    )[-1]
+    plan = skop.plans(toy.quadrants, "image", stack, list("zyx"), position={"z": 2})[-1]
     assert not plan.lossless
 
     labels = runner.run(toy.quadrants, image=stack, plans={"image": plan})

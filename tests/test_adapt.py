@@ -36,9 +36,16 @@ def test_labels_may_be_any_string():
     assert axes.core == ("lifetime", "y", "x")
 
 
+def test_a_lone_iterable_is_the_whole_sequence():
+    assert skop.Axes(list("zyx")) == skop.Axes("z", "y", "x")
+    assert skop.Axes(["lifetime", "y", "x"]) == skop.Axes("lifetime", "y", "x")
+
+
 def test_packing_is_spelled_out_and_means_the_same_thing():
     assert skop.Axes.pack("yxc?") == skop.Axes("y", "x", "c?")
-    assert skop.pack("yxc?") == ("y", "x", "c?")
+    # Which is why pack still earns its keep: list() splits the '?' loose.
+    with pytest.raises(ValueError, match="lone '\\?' is not an axis"):
+        skop.Axes(list("yxc?"))
 
 
 def test_a_lone_packed_looking_label_is_refused_not_guessed():
@@ -56,6 +63,38 @@ def test_axes_rejects_nonsense():
         skop.Axes("z y x")
     with pytest.raises(ValueError, match="not a non-empty string"):
         skop.Axes("y", "")
+
+
+def test_synonyms_resolve_to_the_canonical_name():
+    # scikit-image's spelling, ImageJ's, and Bio-Formats' upper case, all of
+    # which a front end might report, all mean the same three axes.
+    assert skop.Axes("pln", "row", "col") == skop.Axes("z", "y", "x")
+    assert skop.Axes("slice", "channel") == skop.Axes("z", "c")
+    assert skop.Axes(list("ZYX")) == skop.Axes("z", "y", "x")
+    assert skop.Axes("Frame", "Ch") == skop.Axes("t", "c")
+
+
+def test_labels_without_a_canonical_equivalent_survive_untouched():
+    # bioimage.io's batch axis and SCIFIO's lifetime are not synonyms of
+    # anything; folding them into something canonical would be a guess.
+    assert skop.Axes("b", "lifetime", "polarization").names == (
+        "b",
+        "lifetime",
+        "polarization",
+    )
+    # Nor is bioio's 's' -- it distinguishes RGB samples from channels.
+    assert skop.Axes("s").names == ("s",)
+
+
+def test_a_synonym_collision_is_a_repeated_axis():
+    with pytest.raises(ValueError, match="Repeated axis 'y'"):
+        skop.Axes("y", "row")
+
+
+def test_an_op_declaring_y_accepts_an_array_labelled_row():
+    plans = plan_for(toy.quadrants, "image", np.zeros((5, 4, 6)), ("pln", "row", "col"))
+    assert plans[0].iterate == ("z",)
+    assert plans[0].output_axes == ("z", "y", "x")
 
 
 def test_axes_reach_the_spec():
@@ -76,7 +115,7 @@ def test_unannotated_parameter_has_no_axes():
 
 
 def test_exact_match_is_a_no_op():
-    plan = plan_for(toy.quadrants, "image", np.zeros((4, 6)), skop.pack("yx"))[0]
+    plan = plan_for(toy.quadrants, "image", np.zeros((4, 6)), list("yx"))[0]
     assert plan.lossless
     assert plan.calls == 1
     assert plan.iterate == ()
@@ -84,13 +123,13 @@ def test_exact_match_is_a_no_op():
 
 
 def test_transposed_input_is_reordered():
-    plan = plan_for(toy.quadrants, "image", np.zeros((6, 4)), skop.pack("xy"))[0]
+    plan = plan_for(toy.quadrants, "image", np.zeros((6, 4)), list("xy"))[0]
     assert plan.transpose == (1, 0)
     assert _adapt.apply(plan, np.zeros((6, 4))).shape == (4, 6)
 
 
 def test_stack_iterates_when_the_op_allows_it():
-    plans = plan_for(toy.quadrants, "image", np.zeros((5, 4, 6)), skop.pack("zyx"))
+    plans = plan_for(toy.quadrants, "image", np.zeros((5, 4, 6)), list("zyx"))
     assert plans[0].lossless
     assert plans[0].iterate == ("z",)
     assert plans[0].calls == 5
@@ -102,7 +141,7 @@ def test_stack_iterates_when_the_op_allows_it():
 
 def test_slice_candidate_honors_the_viewer_position():
     plans = plan_for(
-        toy.quadrants, "image", np.zeros((5, 4, 6)), skop.pack("zyx"), position={"z": 3}
+        toy.quadrants, "image", np.zeros((5, 4, 6)), list("zyx"), position={"z": 3}
     )
     lossy = plans[-1]
     assert lossy.select == (("z", 3),)
@@ -119,7 +158,7 @@ def test_reject_leaves_only_the_lossy_candidate():
         direction=None,
         axes=skop.Axes("y", "x"),
     )
-    plans = _adapt._candidates(strict, skop.pack("zyx"), (5, 4, 6))
+    plans = _adapt._candidates(strict, list("zyx"), (5, 4, 6))
     assert len(plans) == 1
     assert not plans[0].lossless
 
@@ -127,7 +166,7 @@ def test_reject_leaves_only_the_lossy_candidate():
 def test_passthrough_hands_extra_axes_to_the_op():
     from skop.ops import threshold
 
-    plan = plan_for(threshold.otsu, "image", np.zeros((5, 4, 6)), skop.pack("zyx"))[0]
+    plan = plan_for(threshold.otsu, "image", np.zeros((5, 4, 6)), list("zyx"))[0]
     assert plan.lossless
     assert plan.iterate == ()
     assert plan.calls == 1
@@ -135,12 +174,12 @@ def test_passthrough_hands_extra_axes_to_the_op():
 
 def test_missing_core_axis_is_refused():
     with pytest.raises(ValueError, match="no y axis"):
-        plan_for(toy.quadrants, "image", np.zeros((5, 6)), skop.pack("zx"))
+        plan_for(toy.quadrants, "image", np.zeros((5, 6)), list("zx"))
 
 
 def test_axis_labels_must_match_the_array():
     with pytest.raises(ValueError, match="axis label"):
-        plan_for(toy.quadrants, "image", np.zeros((4, 6)), skop.pack("zyx"))
+        plan_for(toy.quadrants, "image", np.zeros((4, 6)), list("zyx"))
 
 
 def test_a_bare_string_is_one_label_on_the_caller_side_too():
@@ -171,18 +210,18 @@ def test_a_non_canonical_axis_can_be_required():
         axes=skop.Axes("lifetime", "y", "x"),
     )
     with pytest.raises(ValueError, match="no lifetime axis"):
-        _adapt._candidates(decay, skop.pack("zyx"), (5, 4, 6))
+        _adapt._candidates(decay, list("zyx"), (5, 4, 6))
 
 
 def test_choose_refuses_to_discard_data_on_its_own():
-    plans = plan_for(toy.quadrants, "image", np.zeros((5, 4, 6)), skop.pack("zyx"))
+    plans = plan_for(toy.quadrants, "image", np.zeros((5, 4, 6)), list("zyx"))
     assert _adapt.choose(plans) is plans[0]
     with pytest.raises(ValueError, match="discard data"):
         _adapt.choose(plans[1:])
 
 
 def test_plan_survives_the_wire():
-    plan = plan_for(toy.quadrants, "image", np.zeros((5, 4, 6)), skop.pack("zyx"))[0]
+    plan = plan_for(toy.quadrants, "image", np.zeros((5, 4, 6)), list("zyx"))[0]
     assert _adapt.AdaptationPlan.from_dict(plan.to_dict()) == plan
 
 
@@ -198,14 +237,14 @@ def run_adapted(fn, param, array, axes, index=0, **kwargs):
 
 def test_iteration_stacks_results():
     stack = np.zeros((3, 4, 6))
-    labels = run_adapted(toy.quadrants, "image", stack, skop.pack("zyx"))
+    labels = run_adapted(toy.quadrants, "image", stack, list("zyx"))
     assert labels.shape == (3, 4, 6)
 
 
 def test_iteration_renumbers_labels_across_slices():
     # Each plane labels its quadrants 1..4 on its own; stacking as-is would
     # claim object 1 in plane 0 and object 1 in plane 1 are the same thing.
-    labels = run_adapted(toy.quadrants, "image", np.zeros((3, 4, 6)), skop.pack("zyx"))
+    labels = run_adapted(toy.quadrants, "image", np.zeros((3, 4, 6)), list("zyx"))
     assert sorted(np.unique(labels)) == list(range(1, 13))
     assert sorted(np.unique(labels[0])) == [1, 2, 3, 4]
     assert sorted(np.unique(labels[2])) == [9, 10, 11, 12]
@@ -213,21 +252,19 @@ def test_iteration_renumbers_labels_across_slices():
 
 def test_slice_plan_runs_once():
     stack = np.zeros((3, 4, 6))
-    labels = run_adapted(toy.quadrants, "image", stack, skop.pack("zyx"), index=1)
+    labels = run_adapted(toy.quadrants, "image", stack, list("zyx"), index=1)
     assert labels.shape == (4, 6)
 
 
 def test_iteration_over_two_axes():
-    labels = run_adapted(
-        toy.quadrants, "image", np.zeros((2, 3, 4, 6)), skop.pack("tzyx")
-    )
+    labels = run_adapted(toy.quadrants, "image", np.zeros((2, 3, 4, 6)), list("tzyx"))
     assert labels.shape == (2, 3, 4, 6)
     assert labels.max() == 4 * 6
 
 
 def test_transposed_stack_reaches_the_op_in_declared_order():
     # x, y transposed *and* an extra axis to iterate: both at once.
-    labels = run_adapted(toy.quadrants, "image", np.zeros((6, 3, 4)), skop.pack("xzy"))
+    labels = run_adapted(toy.quadrants, "image", np.zeros((6, 3, 4)), list("xzy"))
     assert labels.shape == (3, 4, 6)
 
 

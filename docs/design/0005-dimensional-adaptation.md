@@ -54,12 +54,40 @@ non-extensible enum re-imposes the very ceiling this removes, and physical
 units and scale factors want to arrive alongside axis types anyway. `Axes` can
 grow a per-axis type later without disturbing the label syntax.
 
+### Synonyms
+
+A front end may report scikit-image's `(pln, row, col)`, ImageJ's slices and
+frames, or Bio-Formats' upper-case `XYZCT`. Without resolution, an op declaring
+`y` refuses an array labelled `row` with a confident, useless "no y axis" — so
+the open vocabulary makes synonyms load-bearing rather than polish.
+
+`ALIASES` resolves them, case-folded, in skop rather than in each front end.
+That does not breach [0003](0003-semantic-roles.md)'s no-guessing rule, because
+it is not a guess: `row` *is* `y`. Anything unrecognized is left exactly as it
+is — an open vocabulary means `lifetime` has to survive the lookup unchanged.
+
+The line held is **only true synonyms, never near-synonyms**:
+
+- bioio's `s` (RGB samples) is *not* folded into `c`. bioio distinguishes the
+  two deliberately, and an image with both would then collide.
+- bioimage.io's `b` (batch), CZI's `m` (mosaic tile) and `v` (view), and
+  SCIFIO's `lifetime`, `spectra`, `polarization` and `phase` have no canonical
+  equivalent, so they stay opaque — and adapt perfectly well anyway, since an
+  axis an op does not consume needs no meaning. Batch iterating by default is
+  precisely right.
+- `slice` *is* included: within the hyperstack model this vocabulary shares,
+  ImageJ's slice means z. The genuinely ambiguous case is a plain stack, which
+  has no axis labels to resolve in the first place.
+
+Which spelling is canonical is a coin flip we resolve toward the shortest form,
+since `CANONICAL` is what error messages and `output_axes` display.
+
 ### One string is one label
 
 The rule that keeps the shorthand from becoming an ambiguity. `Axes("ct")` is
 one axis named `ct`; `Axes.pack("ct")` is two. The caller's side obeys the same
-rule — `axes={"image": ("lifetime", "y", "x")}`, or `skop.pack("zyx")` for the
-compact form — so a string never means different things in different places.
+rule — `axes={"image": list("zyx")}` or `{"image": ("pln", "row", "col")}` — so
+a string never means different things in different places.
 
 That leaves exactly one footgun: an author writing `Axes("zyx")` and silently
 getting a single axis named `zyx`. A **lone** argument made entirely of
@@ -68,8 +96,19 @@ fixes. Only a lone argument is suspect, so `Axes("ct", "y", "x")` passes
 untouched. The accepted cost is that a lone axis named `ct` cannot be declared.
 
 `Axes` is a frozen dataclass with `init=False` and a hand-written `__init__`,
-since a generated one cannot take `*args`. It stores the *parsed* labels rather
-than the raw text, which is what makes `Axes.pack("zyx") == Axes("z","y","x")`.
+since a generated one cannot take `*args`. It stores the *canonicalized* labels
+rather than the raw text, which is what makes `Axes.pack("zyx")`,
+`Axes("z", "y", "x")` and `Axes("pln", "row", "col")` all compare equal.
+
+A lone non-string argument is the whole sequence, so `Axes(list("zyx"))` works
+and is arguably the more Pythonic spelling. It does not replace `Axes.pack`,
+though, and the reason is `?`: `list("yxc?")` is `["y", "x", "c", "?"]`, which
+splits the optional marker off the axis it belongs to. Since every image op
+here declares an optional channel, that is the common case rather than the
+exotic one — so `pack` stays, `list(...)` is available for all-required
+patterns, and a stray `"?"` label raises a message naming `pack`. The caller's
+side has no `?` to express, so `list("zyx")` covers it completely and there is
+no exported `skop.pack`.
 
 ### The extra-axis policy
 
@@ -202,14 +241,10 @@ interpretation stays home.
 - Whether `Extra.passthrough` earns its keep, or whether an op that handles its
   own extra axes should simply declare them (`Axes.pack("zyx")`) and be done.
   `otsu` is the only user.
-- **Synonyms.** scikit-image says `(pln, row, col)`, NGFF says `(z, y, x)`, and
-  a front end may report either. Nothing resolves one to the other today, so an
-  op declaring `y` refuses an array labelled `row` with a confident, useless
-  "no y axis" — the open vocabulary makes that failure more likely, not less. A
-  small alias table (`row→y`, `col→x`, `pln→z`, `ch|channel→c`, `frame→t`, plus
-  case folding) belongs in skop rather than in each front end, since it is a
-  synonym lookup and not a guess: unrecognized labels would pass through
-  untouched. Deliberately not built here, to keep this change to one idea.
+- **Which spelling is canonical.** `ALIASES` normalizes toward the
+  one-character forms because they are the shortest, not because they are the
+  most descriptive; `output_axes` and every error message inherit that choice.
+  Worth revisiting if front ends end up translating back.
 - Whether output axes need declaring. Today `AdaptationPlan.output_axes` is
   derived — iterated axes, then the input's core axes — which is right for
   every current op and wrong for a projection.

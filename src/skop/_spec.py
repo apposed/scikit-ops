@@ -45,6 +45,56 @@ class Role(Enum):
 #: lifetime bin, a well, or a polarization angle, and n-D means n-D.
 CANONICAL = ("x", "y", "z", "c", "t")
 
+#: Synonyms for the canonical names, gathered from the stacks that a caller's
+#: labels are likely to have come from: scikit-image's ``(pln, row, col)``,
+#: ImageJ's slices and frames, Bio-Formats and CZI's ``XYZCT``, OME-NGFF and
+#: CF's long names. Resolving these is a lookup, not a guess -- ``row`` *is*
+#: ``y`` -- so it happens in skop rather than separately in every front end.
+#:
+#: Only true synonyms belong here. ``slice`` earns its place because within
+#: the hyperstack model this vocabulary shares, ImageJ's slice *is* z; the
+#: ambiguous case is a plain stack, which has no axis labels to resolve in the
+#: first place. Notably absent is bioio's ``s`` (RGB samples): bioio
+#: distinguishes it from ``c`` deliberately, so folding the two would merge
+#: what the source vocabulary kept apart. Labels with no
+#: canonical equivalent -- bioimage.io's ``b`` for batch, SCIFIO's
+#: ``lifetime``, ``polarization``, ``spectra`` -- are left exactly as they
+#: are, and adapt like any other axis an op does not consume.
+ALIASES = {
+    "col": "x",
+    "cols": "x",
+    "column": "x",
+    "columns": "x",
+    "row": "y",
+    "rows": "y",
+    "pln": "z",
+    "plane": "z",
+    "planes": "z",
+    "slice": "z",
+    "slices": "z",
+    "ch": "c",
+    "chan": "c",
+    "channel": "c",
+    "channels": "c",
+    "frame": "t",
+    "frames": "t",
+    "time": "t",
+    "timepoint": "t",
+    "timepoints": "t",
+}
+
+
+def canonical(label: str) -> str:
+    """Resolve one axis label to the spelling skop matches on.
+
+    Case is folded, so Bio-Formats' ``XYZCT`` and NGFF's ``xyzct`` are the
+    same axes, and a known synonym resolves to its canonical name. Anything
+    unrecognized is returned folded but otherwise untouched: an open
+    vocabulary means ``"lifetime"`` has to survive this unchanged.
+    """
+    folded = label.strip().casefold()
+    return ALIASES.get(folded, folded)
+
 
 def pack(pattern: str) -> tuple[str, ...]:
     """Read a compact pattern as one axis label per character.
@@ -92,10 +142,11 @@ class Extra(Enum):
 class Axes:
     """The axes an image parameter expects, in the order it wants them.
 
-    One argument is one axis label, and a trailing ``?`` marks that axis
-    optional::
+    One argument is one axis label, or a single iterable gives them all, and a
+    trailing ``?`` marks that axis optional::
 
         Axes("y", "x")                             # strictly 2-D
+        Axes(list("zyx"))                          # strictly 3-D
         Axes("y", "x", "c?", extra=Extra.iterate)  # 2-D, tolerates channels,
                                                    # may be mapped over others
         Axes.pack("yxc?", extra=Extra.iterate)     # the same, in shorthand
@@ -103,7 +154,8 @@ class Axes:
     A label is any string. ``CANONICAL`` names are privileged only in that a
     viewer knows how to display them; ``Axes("lifetime", "y", "x")`` is
     equally valid, and an op that merely iterates over an axis never needs to
-    know what it means.
+    know what it means. Labels are resolved through ``canonical``, so an op
+    declaring ``"y"`` is satisfied by an array labelled ``"row"``.
 
     Attached through ``Annotated``, like a role, and read back off
     ``ParamSpec.axes``. It is inert at runtime: an op annotated this way is
@@ -114,11 +166,14 @@ class Axes:
     optional: frozenset[str]
     extra: Extra
 
-    def __init__(self, *names: str, extra: Extra = Extra.reject) -> None:
+    def __init__(self, *names: Any, extra: Extra = Extra.reject) -> None:
         # Note: frozen blocks ordinary assignment, so a hand-written __init__
         # has to set fields the way dataclass itself does. Storing the parsed
         # labels rather than the raw text is what makes Axes.pack("zyx") and
         # Axes("z", "y", "x") compare equal, as they should.
+        if len(names) == 1 and not isinstance(names[0], str):
+            # A lone non-string is the sequence itself: Axes(list("zyx")).
+            names = tuple(names[0])
         parsed, optional = _parse_labels(names)
         object.__setattr__(self, "names", parsed)
         object.__setattr__(self, "optional", frozenset(optional))
@@ -150,8 +205,8 @@ def _parse_labels(names: tuple[str, ...]) -> tuple[tuple[str, ...], list[str]]:
     ``Axes("ct", "y", "x")`` passes untouched; the accepted cost is that a
     lone axis named ``ct`` cannot be declared.
     """
-    if len(names) == 1:
-        lone = names[0].removesuffix("?") if isinstance(names[0], str) else ""
+    if len(names) == 1 and isinstance(names[0], str):
+        lone = names[0].removesuffix("?").casefold()
         if len(lone) > 1 and all(char in CANONICAL for char in lone):
             unpacked = pack(names[0])
             raise ValueError(
@@ -162,14 +217,19 @@ def _parse_labels(names: tuple[str, ...]) -> tuple[tuple[str, ...], list[str]]:
     parsed: list[str] = []
     optional: list[str] = []
     for label in names:
+        if label == "?":
+            raise ValueError(
+                "A lone '?' is not an axis. Mark the axis it belongs to, as "
+                "'c?', or use Axes.pack to read a whole pattern at once."
+            )
         if not isinstance(label, str) or not label.strip("?"):
             raise ValueError(f"Axis label {label!r} is not a non-empty string")
-        if any(char.isspace() or char == "," for char in label):
+        if any(char.isspace() or char == "," for char in label.strip()):
             raise ValueError(
                 f"Axis label {label!r} has a separator in it; pass one label "
                 "per argument, as Axes('z', 'y', 'x')."
             )
-        name = label.removesuffix("?")
+        name = canonical(label.removesuffix("?"))
         if name in parsed:
             raise ValueError(f"Repeated axis {name!r} in {names}")
         parsed.append(name)

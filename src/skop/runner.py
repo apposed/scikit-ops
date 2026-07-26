@@ -212,12 +212,13 @@ class Runner:
                 the more convenient form when no argument name collides with
                 this method's own parameters.
             variant: Optional named pixi sub-environment (e.g. ``"cuda"``).
-            axes: What each array argument actually is, as ``{"image": ("z",
-                "y", "x")}`` or ``{"image": skop.pack("zyx")}``. Naming them
-                lets skop fit them to what the op declared -- transposing, or
-                iterating a 2-D op over a stack. An axis label is any string,
-                so ``("lifetime", "y", "x")`` works as well as the canonical
-                letters. Unnamed arrays are passed through untouched.
+            axes: What each array argument actually is, as ``{"image":
+                list("zyx")}`` or ``{"image": ("pln", "row", "col")}``. Naming
+                them lets skop fit them to what the op declared -- transposing,
+                or iterating a 2-D op over a stack. An axis label is any
+                string, so ``("lifetime", "y", "x")`` works as well as the
+                canonical letters, and known synonyms resolve to them.
+                Unnamed arrays are passed through untouched.
             plans: Explicit ``AdaptationPlan``s, from ``skop.plans``, for
                 callers that want to make the choice themselves. Overrides
                 ``axes`` for the parameters it names. Supply one whenever the
