@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import numpy as np
 import pytest
 
@@ -37,6 +39,22 @@ def test_ui_hints_survive_annotation():
     assert factor.default == 2.0
     assert factor.ui["widget_type"] == "FloatSlider"
     assert factor.ui["max"] == 10.0
+
+
+def test_ui_hints_survive_a_none_default():
+    # Before 3.11, get_type_hints rewrote a None-defaulted parameter's
+    # annotation as Optional[...], which hashes the Annotated alias -- and so
+    # its dict of UI hints -- and blew up. The annotation must come back
+    # exactly as written, on every version an op environment might pin.
+    @skop.op(env="minimal")
+    def dimmer(
+        level: Annotated[float | None, {"widget_type": "FloatSlider"}] = None,
+    ) -> float:
+        return level or 0.0
+
+    level = skop.spec(dimmer).params[0]
+    assert level.ui["widget_type"] == "FloatSlider"
+    assert level.type == (float | None)
 
 
 def test_computer_form_detected():

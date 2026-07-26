@@ -304,6 +304,29 @@ def _field_hints(return_type: Any) -> dict:
         return {}
 
 
+class _Unbound:
+    """A function's annotations, detached from its defaults.
+
+    Before Python 3.11, ``get_type_hints`` rewrites the annotation of any
+    parameter defaulting to ``None`` as ``Optional[<annotation>]``. That
+    implicit rewrite is not merely obsolete, it is fatal here: building the
+    Union deduplicates its members through a set, which hashes the
+    ``Annotated`` alias, which hashes its metadata -- and skop's UI hints are
+    dicts, which are unhashable. So an op with a ``FloatSlider`` hint and a
+    ``None`` default cannot be introspected in, say, the 3.10 environment
+    StarDist pins, however valid its annotations are.
+
+    Passing the annotations through an object with no ``__code__`` denies
+    ``get_type_hints`` any defaults to find, which suppresses the rewrite and
+    gives every Python version the 3.11+ reading of the signature.
+    """
+
+    def __init__(self, fn: Callable) -> None:
+        fn = inspect.unwrap(fn)
+        self.__annotations__ = getattr(fn, "__annotations__", {})
+        self.__globals__ = getattr(fn, "__globals__", {})
+
+
 def _resolve_hints(fn: Callable) -> dict:
     """Evaluate a function's annotations, which may be strings.
 
@@ -314,7 +337,7 @@ def _resolve_hints(fn: Callable) -> dict:
     pin an older one -- UNSEG's pins it to 3.9.
     """
     try:
-        return get_type_hints(fn, include_extras=True)
+        return get_type_hints(_Unbound(fn), include_extras=True)
     except Exception as exc:
         raise TypeError(
             f"Could not resolve the annotations of op {fn.__qualname__} "
