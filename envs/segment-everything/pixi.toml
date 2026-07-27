@@ -1,0 +1,84 @@
+[workspace]
+name = "skop-segment-everything"
+description = "segment-everything, for MobileSAMv2's object-aware YOLO."
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64", "win-64"]
+version = "0.1.0"
+
+[system-requirements]
+cuda = "12.0"
+
+# NB: segment-everything's own dependencies are listed here as conda packages,
+# even though it declares them itself on PyPI. That is what makes this
+# environment solve at all.
+#
+# Left to PyPI, uv resolves `torchvision` against whatever `torch` the conda
+# solve pinned, and no published torchvision matches a current one -- the solve
+# fails outright. Satisfying them from conda first leaves uv only the leaves it
+# is the only source for (onnxsim, torchpack). The recipe is lifted from a
+# working environment: ../napari-ai-lab/pixi/microsam_cellposesam_czi, where
+# micro_sam and cellpose happened to drag the same packages in from conda.
+[dependencies]
+python = "3.11.*"
+numpy = "*"
+appose = ">=0.11"
+scikit-image = "*"
+py-opencv = "*"
+timm = "*"
+onnx = "*"
+segment-anything = "*"
+gdown = "*"
+magicgui = "*"
+
+# The vendored ultralytics 8.0.120's own runtime dependencies, which
+# segment-everything does not declare either -- it only lists what its own
+# modules import. `pandas` is the one that bites first: AutoBackend calls
+# export_formats() to sniff the weights file, and that imports pandas at the
+# top of exporter.py before any model loads.
+pandas = "*"
+matplotlib-base = "*"
+seaborn-base = "*"
+psutil = "*"
+py-cpuinfo = "*"
+requests = "*"
+pyyaml = "*"
+tqdm = "*"
+scipy = "*"
+pillow = "*"
+
+# NB: setuptools is pinned below 81 because that is where `pkg_resources` was
+# removed, and the vendored ultralytics 8.0.120 imports it
+# (yolo/utils/checks.py) while building its settings at import time. Without
+# the pin pixi installs setuptools 83 and the op dies on
+# `ModuleNotFoundError: No module named 'pkg_resources'` before it loads a
+# model. The working environment this recipe came from has 80.9.0, but by
+# lock date rather than by constraint.
+setuptools = "<81"
+
+# NB: ultralytics is deliberately absent, and must stay absent.
+#
+# segment-everything vendors its own ultralytics 8.0.120 fork and puts it on
+# sys.path when loading the object-aware model. A second ultralytics in this
+# environment would shadow, or be shadowed by, that one depending on import
+# order. The maintained ultralytics lives in envs/pytorch instead, which is
+# why these are two environments and not one. See docs/design/0007.
+[pypi-dependencies]
+segment-everything = "==0.3"
+
+# Torch is pinned to the 2.9 series rather than left free. The vendored fork is
+# an ultralytics 8.0.120 from 2023 that already needed patching for a torch
+# API change (weights_only), so tracking the newest torch is a liability here.
+# 2.9.1 is what the working environment above runs.
+[target.linux-64.dependencies]
+pytorch-gpu = "2.9.*"
+torchvision = "*"
+cudnn = "*"
+
+[target.win-64.dependencies]
+pytorch-gpu = "2.9.*"
+torchvision = "*"
+cudnn = "*"
+
+[target.osx-arm64.dependencies]
+pytorch = "2.9.*"
+torchvision = "*"

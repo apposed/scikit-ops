@@ -39,6 +39,8 @@ sharing an environment also share a warm worker process, unless one asks for
 | `skop.ops.segment.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
 | `skop.ops.generate:synthetic_nuclei` | `skimage` | Synthetic 3D test volume |
 | `skop.ops.segment.unseg:unseg` | `unseg-cv` | Unsupervised nuclei + cells |
+| `skop.ops.detect.fastsam:fastsam` | `pytorch` | Class-agnostic boxes, via FastSAM |
+| `skop.ops.detect.object_aware_yolo:object_aware_yolo` | `segment-everything` | Class-agnostic boxes, via MobileSAMv2 |
 | `skop.ops.toy:*` | `minimal` | Exercises for skop itself |
 
 Those are the fully qualified op IDs, as `discover()` reports them. Callers
@@ -120,6 +122,7 @@ about how to display it. `skop.types` adds that missing half:
 | `PointsData` | `Role.points` | a Points layer |
 | `VectorsData` | `Role.vectors` | a Vectors layer |
 | `TracksData` | `Role.tracks` | a Tracks layer |
+| `BoxesData` | `Role.shapes` | a Shapes layer |
 
 They are `Annotated[np.ndarray, ...]` aliases, so nothing else changes: the
 codec still sees an array, direct callers still get an array, and

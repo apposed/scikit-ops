@@ -81,6 +81,36 @@ def test_deconvolution_backends_differ_only_in_environment():
     assert cpu.return_type is gpu.return_type
 
 
+def test_box_detectors_are_substitutable():
+    # The property a workflow depends on when it offers a choice of detector:
+    # same outputs, same shared parameters, same return type. Only the
+    # environment and the model-specific extras differ.
+    fastsam = BY_NAME["skop.ops.detect.fastsam:fastsam"]
+    object_aware = BY_NAME["skop.ops.detect.object_aware_yolo:object_aware_yolo"]
+
+    assert fastsam.env == "pytorch"
+    assert object_aware.env == "segment-everything"
+    assert fastsam.outputs == object_aware.outputs == ("boxes",)
+    assert fastsam.return_type is object_aware.return_type
+
+    shared = ("image", "conf", "iou", "max_det", "imgsz")
+    for spec in (fastsam, object_aware):
+        assert shared == tuple(p.name for p in spec.params if p.name in shared)
+
+
+def test_detected_boxes_are_shapes():
+    # Without the role a front end has no way to know these are rectangles
+    # to draw rather than an array to display.
+    from skop import Role
+
+    for name in (
+        "skop.ops.detect.fastsam:fastsam",
+        "skop.ops.detect.object_aware_yolo:object_aware_yolo",
+    ):
+        boxes = next(o for o in BY_NAME[name].output_specs if o.name == "boxes")
+        assert boxes.role is Role.shapes
+
+
 def test_gaussian_psf_needs_no_environment_of_its_own():
     # A PSF is just numpy, so it shares the environment already there.
     assert BY_NAME["skop.ops.kernels.psf:gaussian_psf"].env == "skimage"

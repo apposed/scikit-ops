@@ -1,0 +1,46 @@
+[workspace]
+name = "skop-pytorch"
+description = "The shared PyTorch environment: well-maintained torch libraries that can coexist."
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64", "win-64"]
+version = "0.1.0"
+
+# This environment is meant to hold several ops, not one. Torch installs are
+# large and slow, so anything torch-based that solves cleanly alongside what is
+# already here belongs here rather than in an environment of its own.
+#
+# Cellpose and micro_sam are the next intended occupants, and adding them is
+# known to work: `ultralytics + cellpose >4 + micro_sam >1.6 + pytorch-gpu`
+# resolves from conda-forge alone, with no PyPI packages at all, on
+# python 3.11 / torch 2.7.1 / cuda 12.9. They are left out until their ops
+# move here, so this does not install a stack nothing uses.
+
+[system-requirements]
+cuda = "12.0"
+
+[dependencies]
+python = "3.11.*"
+numpy = "*"
+ultralytics = ">=8.3"
+appose = ">=0.11"
+
+# NB: torchvision is required explicitly even though nothing here imports it
+# directly. conda's ultralytics does not depend on it, but reads
+# `importlib.metadata.version("torchvision")` at import time and raises
+# PackageNotFoundError when it is absent -- so leaving it out fails at the
+# first `from ultralytics import ...`, not at some later feature.
+torchvision = "*"
+
+# PyTorch varies by platform: CUDA builds where there are GPUs to use,
+# and the plain package on Apple Silicon, where MPS comes built in.
+[target.linux-64.dependencies]
+pytorch-gpu = "*"
+cudnn = "*"
+cuda-version = "12.2"
+
+[target.win-64.dependencies]
+pytorch-gpu = "*"
+cudnn = "*"
+
+[target.osx-arm64.dependencies]
+pytorch = "*"
