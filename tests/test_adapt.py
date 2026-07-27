@@ -41,19 +41,10 @@ def test_a_lone_iterable_is_the_whole_sequence():
     assert skop.Axes(["lifetime", "y", "x"]) == skop.Axes("lifetime", "y", "x")
 
 
-def test_packing_is_spelled_out_and_means_the_same_thing():
-    assert skop.Axes.pack("yxc?") == skop.Axes("y", "x", "c?")
-    # Which is why pack still earns its keep: list() splits the '?' loose.
+def test_a_lone_stray_question_mark_is_refused():
+    # list() splits the '?' loose from the axis it belongs to.
     with pytest.raises(ValueError, match="lone '\\?' is not an axis"):
         skop.Axes(list("yxc?"))
-
-
-def test_a_lone_packed_looking_label_is_refused_not_guessed():
-    # The one footgun the one-string-one-label rule leaves.
-    with pytest.raises(ValueError, match="declares one axis named 'zyx'"):
-        skop.Axes("zyx")
-    # Only a lone argument is suspect: 'ct' beside others is taken at its word.
-    assert skop.Axes("ct", "y", "x").names == ("ct", "y", "x")
 
 
 def test_axes_rejects_nonsense():

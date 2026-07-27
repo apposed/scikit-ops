@@ -28,20 +28,20 @@ The same mechanism roles use, so the two compose:
 ```python
 @op(env="stardist-tf")
 def stardist2d(
-    image: Annotated[ImageData, Axes.pack("yxc?", extra=Extra.iterate)],
+    image: Annotated[ImageData, Axes("y", "x", "c?", extra=Extra.iterate)],
 ) -> LabelsData: ...
 ```
 
 `Axes` takes one axis label per argument, where a trailing `?` marks that axis
-optional. `Axes.pack("yxc?")` is shorthand for `Axes("y", "x", "c?")`: "two
-spatial axes, and I cope with a channel axis if one is there".
+optional: `Axes("y", "x", "c?")` is "two spatial axes, and I cope with a
+channel axis if one is there".
 
 **An axis label is any string**, and that is deliberate. `CANONICAL` — `x y z c
 t`, the intersection of OME-NGFF, bioimage.io and ImgLib2's `AxisType` — is
 privileged only in that a viewer knows how to *display* those; it is not the
 vocabulary. There is no agreed letter for a lifetime bin, a well, an excitation
 wavelength or a polarization angle, and napari is n-D precisely to carry them.
-`Axes("lifetime", "y", "x")` is as valid as `Axes.pack("zyx")`.
+`Axes("lifetime", "y", "x")` is as valid as `Axes("z", "y", "x")`.
 
 Almost nothing pays for that openness, because an axis an op does not consume
 is one it never has to understand: the planner needs axis *identity and order*,
@@ -84,31 +84,16 @@ since `CANONICAL` is what error messages and `output_axes` display.
 
 ### One string is one label
 
-The rule that keeps the shorthand from becoming an ambiguity. `Axes("ct")` is
-one axis named `ct`; `Axes.pack("ct")` is two. The caller's side obeys the same
-rule — `axes={"image": list("zyx")}` or `{"image": ("pln", "row", "col")}` — so
-a string never means different things in different places.
-
-That leaves exactly one footgun: an author writing `Axes("zyx")` and silently
-getting a single axis named `zyx`. A **lone** argument made entirely of
-canonical letters is therefore refused outright, with an error naming both
-fixes. Only a lone argument is suspect, so `Axes("ct", "y", "x")` passes
-untouched. The accepted cost is that a lone axis named `ct` cannot be declared.
-
 `Axes` is a frozen dataclass with `init=False` and a hand-written `__init__`,
 since a generated one cannot take `*args`. It stores the *canonicalized* labels
-rather than the raw text, which is what makes `Axes.pack("zyx")`,
-`Axes("z", "y", "x")` and `Axes("pln", "row", "col")` all compare equal.
+rather than the raw text, which is what makes `Axes("z", "y", "x")` and
+`Axes("pln", "row", "col")` compare equal.
 
-A lone non-string argument is the whole sequence, so `Axes(list("zyx"))` works
-and is arguably the more Pythonic spelling. It does not replace `Axes.pack`,
-though, and the reason is `?`: `list("yxc?")` is `["y", "x", "c", "?"]`, which
-splits the optional marker off the axis it belongs to. Since every image op
-here declares an optional channel, that is the common case rather than the
-exotic one — so `pack` stays, `list(...)` is available for all-required
-patterns, and a stray `"?"` label raises a message naming `pack`. The caller's
-side has no `?` to express, so `list("zyx")` covers it completely and there is
-no exported `skop.pack`.
+A lone non-string argument is the whole sequence, so `Axes(list("zyx"))` works.
+The `list` cast idiom does not cover an optional axis, though: `list("yxc?")`
+is `["y", "x", "c", "?"]`, which splits the optional marker off the axis it
+belongs to, so a lone `"?"` label raises rather than being silently attached to
+the wrong axis.
 
 ### The extra-axis policy
 
@@ -158,8 +143,8 @@ file expected turned out to be the ordering it already had.
 
 And one hazard worth recording here, because it constrains what a *guess* may
 contain rather than what skop does with it: convention must never invent an
-axis name an op might consume. Every image op declares `Axes.pack("yxc?")`, so
-a guessed `c` is not iterated over — it is taken as the channel axis, and
+axis name an op might consume. Every image op declares
+`Axes("y", "x", "c?")`, so a guessed `c` is not iterated over — it is taken as the channel axis, and
 `to_gray` averages across it. A guessed `t` has no such failure mode, since no
 op declares `t`. An axis a resolver cannot name at all is likewise safe as
 `"dim0"`: it satisfies no declaration, so it can only be iterated or rejected.
@@ -208,10 +193,6 @@ existing caller and test kept passing unchanged.
 
 ## Limits, accepted knowingly
 
-**A lone axis named after canonical letters** — `Axes("ct")` — cannot be
-declared, since that spelling is reserved for catching a mis-written packed
-pattern.
-
 **Axis requirements that depend on another parameter.** `stardist2d`'s `model`
 selects between a fluorescence model wanting one channel and an H&E model
 wanting three. The pattern declares the union — `c` optional — and the op body
@@ -247,7 +228,7 @@ interpretation stays home.
 ## Still open
 
 - Whether `Extra.passthrough` earns its keep, or whether an op that handles its
-  own extra axes should simply declare them (`Axes.pack("zyx")`) and be done.
+  own extra axes should simply declare them (`Axes("z", "y", "x")`) and be done.
   `otsu` is the only user.
 - **Which spelling is canonical.** `ALIASES` normalizes toward the
   one-character forms because they are the shortest, not because they are the

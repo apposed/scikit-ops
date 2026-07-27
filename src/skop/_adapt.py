@@ -76,8 +76,8 @@ def normalize_axes(axes: str | Sequence[str]) -> tuple[str, ...]:
 
     ``("lifetime", "y", "x")`` is three axes and ``"c"`` is one; ``list("zyx")``
     is the compact spelling. A lone canonical-looking string like ``"zyx"`` is
-    refused rather than guessed at, the same way ``Axes`` refuses it. Labels
-    resolve through ``canonical``, so ``("pln", "row", "col")`` is ``zyx``.
+    refused rather than guessed at. Labels resolve through ``canonical``, so
+    ``("pln", "row", "col")`` is ``zyx``.
     """
     if isinstance(axes, str):
         if len(axes) > 1 and all(char in _spec.CANONICAL for char in axes.casefold()):

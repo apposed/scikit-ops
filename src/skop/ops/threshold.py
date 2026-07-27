@@ -17,7 +17,7 @@ from ._util import to_gray
 
 @op(env="skimage")
 def otsu(
-    image: Annotated[ImageData, Axes.pack("yxc?", extra=Extra.passthrough)],
+    image: Annotated[ImageData, Axes("y", "x", "c?", extra=Extra.passthrough)],
     invert: bool = False,
     label_objects: bool = True,
 ) -> LabelsData:

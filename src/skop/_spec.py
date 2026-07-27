@@ -40,9 +40,9 @@ class Role(Enum):
 
 
 #: Axis names that a viewer can map onto display semantics: the intersection
-#: of OME-NGFF, bioimage.io and ImgLib2's AxisType. Privileged, not exclusive
+#: of OME-NGFF, bioimage.io and ImageJ2's AxisType. Privileged, not exclusive
 #: -- an axis label is any string, because there is no agreed letter for a
-#: lifetime bin, a well, or a polarization angle, and n-D means n-D.
+#: lifetime bin, a stage position, or a polarization angle, and n-D means n-D.
 CANONICAL = ("x", "y", "z", "c", "t")
 
 #: Synonyms for the canonical names, gathered from the stacks that a caller's
@@ -96,30 +96,6 @@ def canonical(label: str) -> str:
     return ALIASES.get(folded, folded)
 
 
-def pack(pattern: str) -> tuple[str, ...]:
-    """Read a compact pattern as one axis label per character.
-
-    ``pack("yxc?")`` is ``("y", "x", "c?")``. This is the shorthand for the
-    common case, spelled out rather than inferred: everywhere else in skop, one
-    string is one axis label, so that a multi-character label like ``"well"``
-    is never mistaken for four axes and ``"ct"`` is never mistaken for two.
-    """
-    labels: list[str] = []
-    for char in pattern:
-        if char == "?":
-            if not labels or labels[-1].endswith("?"):
-                raise ValueError(f"Stray '?' in packed pattern {pattern!r}")
-            labels[-1] += "?"
-        elif char.isspace() or char == ",":
-            raise ValueError(
-                f"Packed pattern {pattern!r} has a separator in it. Packing is "
-                "one axis per character; pass separate labels instead."
-            )
-        else:
-            labels.append(char)
-    return tuple(labels)
-
-
 class Extra(Enum):
     """What an op permits a caller to do with axes it does not consume.
 
@@ -149,7 +125,6 @@ class Axes:
         Axes(list("zyx"))                          # strictly 3-D
         Axes("y", "x", "c?", extra=Extra.iterate)  # 2-D, tolerates channels,
                                                    # may be mapped over others
-        Axes.pack("yxc?", extra=Extra.iterate)     # the same, in shorthand
 
     A label is any string. ``CANONICAL`` names are privileged only in that a
     viewer knows how to display them; ``Axes("lifetime", "y", "x")`` is
@@ -169,8 +144,8 @@ class Axes:
     def __init__(self, *names: Any, extra: Extra = Extra.reject) -> None:
         # Note: frozen blocks ordinary assignment, so a hand-written __init__
         # has to set fields the way dataclass itself does. Storing the parsed
-        # labels rather than the raw text is what makes Axes.pack("zyx") and
-        # Axes("z", "y", "x") compare equal, as they should.
+        # labels rather than the raw text is what makes Axes("z", "y", "x")
+        # and Axes("pln", "row", "col") compare equal, as they should.
         if len(names) == 1 and not isinstance(names[0], str):
             # A lone non-string is the sequence itself: Axes(list("zyx")).
             names = tuple(names[0])
@@ -178,11 +153,6 @@ class Axes:
         object.__setattr__(self, "names", parsed)
         object.__setattr__(self, "optional", frozenset(optional))
         object.__setattr__(self, "extra", extra)
-
-    @classmethod
-    def pack(cls, pattern: str, *, extra: Extra = Extra.reject) -> Axes:
-        """Build from a compact pattern, one axis per character."""
-        return cls(*pack(pattern), extra=extra)
 
     @property
     def core(self) -> tuple[str, ...]:
@@ -197,30 +167,13 @@ class Axes:
 
 
 def _parse_labels(names: tuple[str, ...]) -> tuple[tuple[str, ...], list[str]]:
-    """Validate axis labels, splitting off the ones marked optional.
-
-    A lone argument made entirely of canonical letters is refused, since it is
-    almost certainly a packed pattern written by hand -- the one footgun the
-    one-string-one-label rule leaves. Only a lone argument is suspect, so
-    ``Axes("ct", "y", "x")`` passes untouched; the accepted cost is that a
-    lone axis named ``ct`` cannot be declared.
-    """
-    if len(names) == 1 and isinstance(names[0], str):
-        lone = names[0].removesuffix("?").casefold()
-        if len(lone) > 1 and all(char in CANONICAL for char in lone):
-            unpacked = pack(names[0])
-            raise ValueError(
-                f"Axes({names[0]!r}) declares one axis named {lone!r}. If you "
-                f"meant {len(unpacked)} axes, write Axes.pack({names[0]!r}) or "
-                f"Axes({', '.join(repr(label) for label in unpacked)})."
-            )
+    """Validate axis labels, splitting off the ones marked optional."""
     parsed: list[str] = []
     optional: list[str] = []
     for label in names:
         if label == "?":
             raise ValueError(
-                "A lone '?' is not an axis. Mark the axis it belongs to, as "
-                "'c?', or use Axes.pack to read a whole pattern at once."
+                "A lone '?' is not an axis. Mark the axis it belongs to, as 'c?'."
             )
         if not isinstance(label, str) or not label.strip("?"):
             raise ValueError(f"Axis label {label!r} is not a non-empty string")
