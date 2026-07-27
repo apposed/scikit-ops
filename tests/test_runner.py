@@ -146,3 +146,64 @@ def test_op_failure_surfaces_as_an_exception(runner):
 
     with pytest.raises(TaskException):
         runner.run(toy.scale, image="not an array")
+
+
+def test_a_2d_op_iterates_over_a_stack_in_the_worker(runner):
+    # Naming the axes is what unlocks this: quadrants is strictly 2-D, and
+    # the whole stack crosses the boundary once, not once per plane.
+    stack = np.zeros((3, 8, 6), dtype=np.float32)
+    labels = runner.run(toy.quadrants, image=stack, axes={"image": list("zyx")})
+
+    assert labels.shape == (3, 8, 6)
+    assert labels.max() == 12  # Four quadrants per plane, renumbered.
+
+
+def test_iteration_reports_progress_per_slice(runner):
+    seen = []
+    runner.run(
+        toy.quadrants,
+        image=np.zeros((4, 8, 6), dtype=np.float32),
+        axes={"image": list("zyx")},
+        on_progress=lambda event: seen.append(event),
+    )
+    assert any("Slice 4 of 4" in str(getattr(e, "message", "")) for e in seen)
+
+
+def test_an_unusable_input_is_refused_before_dispatch(runner):
+    # Planning happens on the host, so a hopeless call never reaches a worker.
+    # Too few axes is the only thing left that cannot be adapted: a name that
+    # does not match is a warning now, not a refusal.
+    with pytest.raises(ValueError, match="consumes 2 axes but was given 1"):
+        runner.run(toy.quadrants, image=np.zeros((6,)), axes={"image": ["x"]})
+
+
+def test_a_mismatched_axis_name_runs_anyway_and_says_so(runner):
+    # The op wanted y and x; it is being given z and x. That is the user's
+    # call to make, so it runs -- with the misalignment recorded on the plan.
+    plan = skop.plan(toy.quadrants, "image", np.zeros((3, 6)), list("zx"))
+    assert plan.warnings == ("y is being fed the z axis",)
+
+    labels = runner.run(toy.quadrants, image=np.zeros((3, 6)), plans={"image": plan})
+    assert labels.shape == (3, 6)
+
+
+def test_a_chosen_plan_is_obeyed(runner):
+    stack = np.arange(3 * 8 * 6, dtype=np.float32).reshape(3, 8, 6)
+    plan = skop.plan(
+        toy.quadrants,
+        "image",
+        stack,
+        list("zyx"),
+        position={"z": 2},
+        dispositions={0: skop.SELECT},
+    )
+    assert not plan.lossless
+
+    labels = runner.run(toy.quadrants, image=stack, plans={"image": plan})
+    assert labels.shape == (8, 6)
+
+
+def test_unadapted_arrays_are_untouched(runner):
+    # Saying nothing about axes means the op sees exactly what was passed.
+    image = np.ones((2, 3, 4), dtype=np.float32)
+    assert runner.run(toy.scale, image=image, factor=2.0).scaled.shape == (2, 3, 4)

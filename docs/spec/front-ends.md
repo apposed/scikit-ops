@@ -17,12 +17,17 @@ A front end may read `OpSpec` and nothing else. Specifically:
 | `ParamSpec.type` | which widget |
 | `ParamSpec.ui` | that widget's type, range, step |
 | `ParamSpec.role` | whether it is a layer/image selector instead |
+| `ParamSpec.axes` | how many axes it consumes, and what it likes to call them |
 | `ParamSpec.direction` | `Out` params are never shown |
 | `output_specs` → `OutputSpec` | where each result goes |
 | `OutputSpec.role` | which display type |
 
-Plus `Runner.run(..., on_progress=, on_start=)` and the three
-`subscribe_build_*` methods ([design 0004](../design/0004-build-feedback.md)).
+Plus `Runner.run(..., on_progress=, on_start=)`, the three `subscribe_build_*`
+methods ([design 0004](../design/0004-build-feedback.md)), and `skop.plan`
+([design 0006](../design/0006-axis-mapping.md)) — which is the sharpest case of
+the rule below, since a front end must work out an array's axes itself before
+skop will fit it to anything, and then owns the mapping decision on top: skop
+supplies a default plan and the warnings against it, never a veto.
 
 Nothing in that list is napari-shaped. That is the test: if a change to skop
 would only make sense to a napari author, it belongs in the front end.

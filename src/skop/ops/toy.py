@@ -12,7 +12,7 @@ from typing import Annotated, NamedTuple
 
 import numpy as np
 
-from skop import Out, cancel_requested, op, progress
+from skop import Axes, Out, cancel_requested, op, progress
 from skop.types import ImageData, LabelsData, PointsData
 
 
@@ -57,6 +57,24 @@ def scale_into(
     is both an output buffer and an image.
     """
     np.multiply(image, factor, out=result, casting="unsafe")
+
+
+@op(env="minimal")
+def quadrants(
+    image: Annotated[ImageData, Axes("y", "x")],
+) -> LabelsData:
+    """Label a plane's four quadrants, 1 through 4.
+
+    A strictly 2-D op, and the standing test case for adapting one: fed a
+    stack, every plane numbers its own objects from 1, so a correct
+    reassembly has to renumber them.
+    """
+    height, width = image.shape
+    labels = np.ones(image.shape, dtype=np.uint16)
+    labels[: height // 2, width // 2 :] = 2
+    labels[height // 2 :, : width // 2] = 3
+    labels[height // 2 :, width // 2 :] = 4
+    return labels
 
 
 @op(env="minimal")

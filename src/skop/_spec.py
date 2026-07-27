@@ -39,6 +39,191 @@ class Role(Enum):
     vectors = "vectors"
 
 
+#: Axis names that a viewer can map onto display semantics: the intersection
+#: of OME-NGFF, bioimage.io and ImageJ2's AxisType. Privileged, not exclusive
+#: -- an axis label is any string, because there is no agreed letter for a
+#: lifetime bin, a stage position, or a polarization angle, and n-D means n-D.
+CANONICAL = ("x", "y", "z", "c", "t")
+
+#: Synonyms for the canonical names, gathered from the stacks that a caller's
+#: labels are likely to have come from: scikit-image's ``(pln, row, col)``,
+#: ImageJ's slices and frames, Bio-Formats and CZI's ``XYZCT``, OME-NGFF and
+#: CF's long names. Resolving these is a lookup, not a guess -- ``row`` *is*
+#: ``y`` -- so it happens in skop rather than separately in every front end.
+#:
+#: Only true synonyms belong here. ``slice`` earns its place because within
+#: the hyperstack model this vocabulary shares, ImageJ's slice *is* z; the
+#: ambiguous case is a plain stack, which has no axis labels to resolve in the
+#: first place. Notably absent is bioio's ``s`` (RGB samples): bioio
+#: distinguishes it from ``c`` deliberately, so folding the two would merge
+#: what the source vocabulary kept apart. Labels with no
+#: canonical equivalent -- bioimage.io's ``b`` for batch, SCIFIO's
+#: ``lifetime``, ``polarization``, ``spectra`` -- are left exactly as they
+#: are, and adapt like any other axis an op does not consume.
+ALIASES = {
+    "col": "x",
+    "cols": "x",
+    "column": "x",
+    "columns": "x",
+    "row": "y",
+    "rows": "y",
+    "pln": "z",
+    "plane": "z",
+    "planes": "z",
+    "slice": "z",
+    "slices": "z",
+    "ch": "c",
+    "chan": "c",
+    "channel": "c",
+    "channels": "c",
+    "frame": "t",
+    "frames": "t",
+    "time": "t",
+    "timepoint": "t",
+    "timepoints": "t",
+}
+
+
+def canonical(label: str) -> str:
+    """Resolve one axis label to the spelling skop matches on.
+
+    Case is folded, so Bio-Formats' ``XYZCT`` and NGFF's ``xyzct`` are the
+    same axes, and a known synonym resolves to its canonical name. Anything
+    unrecognized is returned folded but otherwise untouched: an open
+    vocabulary means ``"lifetime"`` has to survive this unchanged.
+    """
+    folded = label.strip().casefold()
+    return ALIASES.get(folded, folded)
+
+
+#: The spelling for a slot with no name preference at all.
+WILDCARD = "*"
+
+
+@dataclass(frozen=True)
+class Slot:
+    """One axis an image parameter consumes.
+
+    ``name`` is a *hint*, not a requirement: it biases which of the caller's
+    axes lands here, and a mismatch is reported rather than refused. A wildcard
+    slot (``name`` is None) has no preference at all.
+    """
+
+    name: str | None
+    optional: bool = False
+
+    def __str__(self) -> str:
+        return (self.name or WILDCARD) + ("?" if self.optional else "")
+
+
+@dataclass(frozen=True, init=False)
+class Axes:
+    """How many axes an image parameter consumes, and what it likes to call them.
+
+    One argument is one slot, or a single iterable gives them all. A trailing
+    ``?`` marks a slot optional, and ``"*"`` is a slot with no name preference::
+
+        Axes("y", "x")        # two axes; prefers to call them y and x
+        Axes(list("zyx"))     # three
+        Axes("y", "x", "c?")  # two, plus a channel axis if one is there
+        Axes("*", "*")        # two axes, no opinion which
+        Axes(variadic=True)   # any number of axes, whatever they are
+
+    **Names are hints, never requirements.** A 2-D triangulation works on
+    ``y x``, ``z x`` and ``z y`` alike, so a name only biases the default
+    mapping; handing an op axes it did not name is reported through
+    ``AdaptationPlan.warnings``, never refused. What binds is the *arity* --
+    how many axes the op consumes -- because that is the part the op's own
+    indexing depends on. Names resolve through ``canonical``, so a slot named
+    ``"y"`` prefers an array axis labelled ``"row"``.
+
+    ``variadic`` says the op copes with any number of further axes on its own:
+    global thresholding is happy with 1-D, a plane or a whole volume, so a
+    caller's leftover axes may be folded into the call rather than looped over.
+
+    Attached through ``Annotated``, like a role, and read back off
+    ``ParamSpec.axes``. It is inert at runtime: an op annotated this way is
+    still called with whatever the caller passes when called directly.
+    """
+
+    slots: tuple[Slot, ...]
+    variadic: bool
+
+    def __init__(self, *names: Any, variadic: bool = False) -> None:
+        # Note: frozen blocks ordinary assignment, so a hand-written __init__
+        # has to set fields the way dataclass itself does. Storing the parsed
+        # slots rather than the raw text is what makes Axes("z", "y", "x") and
+        # Axes("pln", "row", "col") compare equal, as they should.
+        if len(names) == 1 and not isinstance(names[0], str):
+            # A lone non-string is the sequence itself: Axes(list("zyx")).
+            names = tuple(names[0])
+        object.__setattr__(self, "slots", _parse_slots(names))
+        object.__setattr__(self, "variadic", variadic)
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Each slot's preferred name, with ``"*"`` standing in for a wildcard."""
+        return tuple(str(slot).removesuffix("?") for slot in self.slots)
+
+    @property
+    def optional(self) -> frozenset[str]:
+        """Names of the slots that need not be filled."""
+        return frozenset(
+            slot.name for slot in self.slots if slot.optional and slot.name
+        )
+
+    @property
+    def core(self) -> tuple[str, ...]:
+        """Preferred names of the slots that must be filled."""
+        return tuple(str(slot) for slot in self.slots if not slot.optional)
+
+    def __repr__(self) -> str:
+        shown = ", ".join(repr(str(slot)) for slot in self.slots)
+        if self.variadic:
+            shown = f"{shown}, variadic=True" if shown else "variadic=True"
+        return f"Axes({shown})"
+
+
+def _parse_slots(names: tuple[Any, ...]) -> tuple[Slot, ...]:
+    """Validate slot spellings, resolving names and splitting off the '?'."""
+    slots: list[Slot] = []
+    seen: set[str] = set()
+    for label in names:
+        if label == "?":
+            raise ValueError(
+                "A lone '?' is not an axis. Mark the axis it belongs to, as 'c?'."
+            )
+        if not isinstance(label, str) or not label.strip("?"):
+            raise ValueError(f"Axis label {label!r} is not a non-empty string")
+        if any(char.isspace() or char == "," for char in label.strip()):
+            raise ValueError(
+                f"Axis label {label!r} has a separator in it; pass one label "
+                "per argument, as Axes('z', 'y', 'x')."
+            )
+        optional = label.endswith("?")
+        text = label.removesuffix("?")
+        if text == WILDCARD:
+            if optional:
+                # A wildcard has no name, and an optional slot is filled only
+                # by a name match, so '*?' could never be filled by anything.
+                raise ValueError(
+                    "'*?' is not a usable slot: a wildcard has no name to match "
+                    "on, and an optional slot is filled only by name. Use '*' "
+                    "for an axis the op always takes, or variadic=True for a "
+                    "tail of axes it may or may not be given."
+                )
+            # Wildcards are exempt from the repeat check: Axes('*', '*') is
+            # two axes the op has no opinion about, which is the whole point.
+            slots.append(Slot(None, False))
+            continue
+        name = canonical(text)
+        if name in seen:
+            raise ValueError(f"Repeated axis {name!r} in {names}")
+        seen.add(name)
+        slots.append(Slot(name, optional))
+    return tuple(slots)
+
+
 class _Direction:
     """Marker distinguishing input, output-buffer and mutated-buffer params."""
 
@@ -97,6 +282,14 @@ def role_of(annotation: Any) -> Role | None:
     return None
 
 
+def axes_of(annotation: Any) -> Axes | None:
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, Axes):
+                return meta
+    return None
+
+
 def _strip(annotation: Any) -> Any:
     """Return the underlying type of a possibly-Annotated annotation."""
     return (
@@ -122,6 +315,7 @@ class ParamSpec:
     direction: _Direction | None
     ui: dict = field(default_factory=dict)
     role: Role | None = None
+    axes: Axes | None = None
 
     @property
     def required(self) -> bool:
@@ -266,6 +460,7 @@ def spec(fn: Callable) -> OpSpec:
                 direction=direction_of(annotation),
                 ui=_ui_hints(annotation),
                 role=role_of(annotation),
+                axes=axes_of(annotation),
             )
         )
 

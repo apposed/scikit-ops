@@ -9,7 +9,7 @@ from typing import Annotated
 
 import numpy as np
 
-from skop import op, progress
+from skop import Axes, op, progress
 from skop.types import ImageData, LabelsData
 
 from .._util import to_gray
@@ -17,7 +17,7 @@ from .._util import to_gray
 
 @op(env="cellpose")
 def cellpose(
-    image: ImageData,
+    image: Annotated[ImageData, Axes("y", "x", "c?")],
     diameter: Annotated[
         float,
         {"widget_type": "FloatSpinBox", "min": 0.0, "max": 1000.0, "step": 1.0},
@@ -35,7 +35,8 @@ def cellpose(
     """Segment cells with Cellpose.
 
     Args:
-        image: Image to segment. A trailing RGB(A) axis is collapsed.
+        image: Plane to segment. A trailing RGB(A) axis is collapsed. A
+            caller naming its axes may hand this a stack instead.
         diameter: Expected cell diameter in pixels; 0 lets Cellpose estimate.
         flow_threshold: Maximum allowed flow error per mask.
         cellprob_threshold: Cell probability cutoff; lower finds more cells.

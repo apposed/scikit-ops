@@ -27,6 +27,8 @@ load-bearing.
 | [0002](design/0002-named-environments.md) | Environments are named and shared, not derived per op |
 | [0003](design/0003-semantic-roles.md) | What an array *means*, and why skop never guesses |
 | [0004](design/0004-build-feedback.md) | Reporting an environment build to whoever is running the op |
+| [0005](design/0005-dimensional-adaptation.md) | Fitting an n-D array to an m-D op (superseded in part by 0006) |
+| [0006](design/0006-axis-mapping.md) | Ops declare arity and hints; the axis mapping belongs to the user |
 
 ## Spec
 

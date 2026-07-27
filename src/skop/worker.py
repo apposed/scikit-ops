@@ -15,10 +15,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from . import _codec, _progress, _spec
+from . import _adapt, _codec, _progress, _spec
 
 
-def invoke(task: Any, module: str, function: str, kwargs: dict) -> dict:
+def invoke(
+    task: Any,
+    module: str,
+    function: str,
+    kwargs: dict,
+    plans: list | None = None,
+) -> dict:
     """Run an op in this worker process, on behalf of a host.
 
     Args:
@@ -26,6 +32,9 @@ def invoke(task: Any, module: str, function: str, kwargs: dict) -> dict:
         module: Module to import the op from, e.g. ``"skop.ops.segment.starfun3d"``.
         function: Name of the op function within that module.
         kwargs: Op arguments, as decoded by Appose.
+        plans: Serialized ``AdaptationPlan``s, one per parameter needing one.
+            Iteration runs here rather than on the host so that forty planes
+            cost one task and one trip through shared memory, not forty.
 
     Returns:
         A dict of task outputs. Computer- and inplace-form ops return an
@@ -34,6 +43,9 @@ def invoke(task: Any, module: str, function: str, kwargs: dict) -> dict:
     """
     fn = getattr(importlib.import_module(module), function)
     spec = _spec.spec(fn)
+    adaptations = {
+        plan["param"]: _adapt.AdaptationPlan.from_dict(plan) for plan in plans or []
+    }
 
     refs: list = []
     outbound: list = []
@@ -43,7 +55,7 @@ def invoke(task: Any, module: str, function: str, kwargs: dict) -> dict:
 
         token = _progress._bind(task)
         try:
-            result = fn(**args)
+            result = _adapt.execute(spec, fn, args, adaptations)
         finally:
             _progress._unbind(token)
 
