@@ -352,3 +352,82 @@ def test_unseg(runner):
     assert result.n_cells == len(centers)
     assert result.nuclei.shape == (size, size)
     assert result.cells.shape == (size, size)
+
+
+def check_boxes(result, shape: tuple[int, int]) -> None:
+    """Assertions every box detector's output has to satisfy."""
+    boxes = result.boxes
+
+    assert boxes.ndim == 2 and boxes.shape[1] == 4
+    # Both detectors are class-agnostic, so finding nothing in an image full
+    # of obvious blobs is a real failure -- most likely to_rgb handing the
+    # model a black image, or a threshold set wrong.
+    assert len(boxes) > 0
+
+    assert np.all(boxes[:, 0] < boxes[:, 2]), "min_y must be below max_y"
+    assert np.all(boxes[:, 1] < boxes[:, 3]), "min_x must be left of max_x"
+    assert np.all(boxes >= 0)
+    assert np.all(boxes[:, [0, 2]] <= shape[0])
+    assert np.all(boxes[:, [1, 3]] <= shape[1])
+    # Canonical order is row-major. If a detector forgot to convert, its
+    # boxes would sit transposed -- which on a non-square image shows up as
+    # coordinates outside the frame, and on a square one would not. Hence
+    # the non-square image below.
+
+
+def coins_like(height: int = 200, width: int = 320) -> np.ndarray:
+    """Bright discs on a dark background: obviously objects, obviously no class.
+
+    Non-square on purpose, so a missed x/y transposition fails here.
+    """
+    yy, xx = np.mgrid[0:height, 0:width]
+    image = np.zeros((height, width), dtype=np.float32)
+    for cy, cx, r in [
+        (60, 60, 28),
+        (60, 160, 24),
+        (60, 260, 30),
+        (140, 100, 26),
+        (140, 220, 22),
+    ]:
+        image[(yy - cy) ** 2 + (xx - cx) ** 2 < r**2] = 1.0
+    return (image * 200 + 20).astype(np.uint8)
+
+
+@pytest.mark.env("pytorch")
+def test_fastsam_finds_objects_of_no_particular_class(runner):
+    from skop.ops.detect import fastsam
+
+    image = coins_like()
+    check_boxes(runner.run(fastsam, image=image), image.shape)
+
+
+@pytest.mark.env("segment-everything")
+def test_object_aware_yolo_finds_objects_of_no_particular_class(runner):
+    from skop.ops.detect import object_aware_yolo
+
+    image = coins_like()
+    check_boxes(runner.run(object_aware_yolo, image=image), image.shape)
+
+
+@pytest.mark.env("pytorch")
+@pytest.mark.env("segment-everything")
+def test_both_detectors_agree_there_are_objects(runner):
+    # Needs both environments, so it skips on most machines. When it does
+    # run, it is the check that the two are interchangeable in practice and
+    # not only in signature.
+    from skop.ops.detect import fastsam, object_aware_yolo
+
+    image = coins_like()
+    a = runner.run(fastsam, image=image)
+    b = runner.run(object_aware_yolo, image=image)
+
+    assert len(a.boxes) > 0 and len(b.boxes) > 0
+    assert a.boxes.dtype == b.boxes.dtype
+
+    # Both should land somewhere near the middle of the frame, where the
+    # discs are -- a weak assertion on purpose, since the models are
+    # different and their box counts will not match.
+    for result in (a, b):
+        centers = (result.boxes[:, :2] + result.boxes[:, 2:]) / 2
+        assert np.all(centers[:, 0] < image.shape[0])
+        assert np.all(centers[:, 1] < image.shape[1])

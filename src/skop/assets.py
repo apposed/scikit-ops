@@ -72,6 +72,43 @@ def unzip_from_url(url: str, name: str, marker: str | None = None) -> Path:
     return dest
 
 
+def file_from_url(url: str, name: str) -> Path:
+    """Download a single file into the asset cache.
+
+    The counterpart to :func:`unzip_from_url` for weights that are shipped
+    bare rather than zipped. Downloading them here, and handing the library
+    an absolute path, is what keeps a model from deciding for itself where
+    to put a 145 MB file -- which for several of them means the worker's
+    working directory.
+
+    Args:
+        url: Where to fetch the file from.
+        name: Cache-relative path to store it at, e.g. ``"fastsam/FastSAM-s.pt"``.
+
+    Returns:
+        The path of the downloaded file.
+    """
+    dest = cache_dir() / name
+    if dest.exists():
+        return dest
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    progress(f"Downloading {url}")
+
+    # Download beside the target and rename, so an interrupted download is
+    # never mistaken for a complete one on the next call.
+    fd, staging = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}-")
+    os.close(fd)
+    staging = Path(staging)
+    try:
+        _download(url, staging)
+        staging.replace(dest)
+    finally:
+        staging.unlink(missing_ok=True)
+
+    return dest
+
+
 def _complete(dest: Path, marker: str | None) -> bool:
     if marker is not None:
         return (dest / marker).exists()

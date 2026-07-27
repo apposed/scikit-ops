@@ -43,7 +43,12 @@ VectorsData = Annotated[np.ndarray, Role.vectors]
 #: Trajectories, as (N, D+2): track ID, time, then coordinates.
 TracksData = Annotated[np.ndarray, Role.tracks]
 
+#: Axis-aligned bounding boxes, as (N, 4): [min_y, min_x, max_y, max_x].
+#: See ``skop.boxes`` for the converters between this and everyone else's order.
+BoxesData = Annotated[np.ndarray, Role.shapes]
+
 __all__ = [
+    "BoxesData",
     "ImageData",
     "LabelsData",
     "PointsData",
