@@ -35,7 +35,8 @@ sharing an environment also share a warm worker process, unless one asks for
 | `skop.ops.deconvolve.richardson_lucy:richardson_lucy` | `skimage` | Richardson-Lucy, on the CPU |
 | `skop.ops.deconvolve.richardson_lucy_cupy:richardson_lucy_cupy` | `cupy` | Richardson-Lucy, on an NVIDIA GPU |
 | `skop.ops.segment.cellpose:cellpose` | `cellpose` | Cellpose segmentation |
-| `skop.ops.segment.stardist2d:stardist2d` | `stardist-tf` | StarDist 2D, pretrained |
+| `skop.ops.segment.stardist2d:stardist2d_fluo` | `stardist-tf` | StarDist 2D, pretrained fluorescence |
+| `skop.ops.segment.stardist2d:stardist2d_he` | `stardist-tf` | StarDist 2D, pretrained H&E |
 | `skop.ops.segment.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
 | `skop.ops.generate:synthetic_nuclei` | `skimage` | Synthetic 3D test volume |
 | `skop.ops.segment.unseg:unseg` | `unseg-cv` | Unsupervised nuclei + cells |
@@ -47,10 +48,10 @@ module or a package of them:
 
 ```python
 from skop.ops.threshold import otsu
-from skop.ops.segment import cellpose, stardist2d
+from skop.ops.segment import cellpose, stardist2d_fluo
 ```
 
-`stardist2d` and `segment_nuclei` share one TensorFlow build and one warm
+`stardist2d_fluo` and `segment_nuclei` share one TensorFlow build and one warm
 worker — the point of naming environments rather than tying them to ops.
 `unseg-cv` shares nothing with anything: it pins Python 3.9, numpy 1.24 and an
 old scikit-image, which is exactly why it needs an environment of its own.

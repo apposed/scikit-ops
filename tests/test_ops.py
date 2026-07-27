@@ -45,15 +45,25 @@ def test_op_declares_outputs(spec):
 
 
 def test_stardist_ops_share_one_environment():
-    # The payoff of named environments: one TensorFlow build, two ops.
-    assert BY_NAME["skop.ops.segment.stardist2d:stardist2d"].env == "stardist-tf"
+    # The payoff of named environments: one TensorFlow build, several ops.
+    assert BY_NAME["skop.ops.segment.stardist2d:stardist2d_fluo"].env == "stardist-tf"
+    assert BY_NAME["skop.ops.segment.stardist2d:stardist2d_he"].env == "stardist-tf"
     assert BY_NAME["skop.ops.segment.starfun3d:segment_nuclei"].env == "stardist-tf"
 
 
+def test_the_two_stardist_models_differ_in_what_they_consume():
+    # Why they are two ops: H&E is trained on stain colour and always needs a
+    # channel axis, where the fluorescence model collapses one if given it.
+    fluo = BY_NAME["skop.ops.segment.stardist2d:stardist2d_fluo"]
+    he = BY_NAME["skop.ops.segment.stardist2d:stardist2d_he"]
+    assert next(p for p in fluo.params if p.name == "image").axes.optional == {"c"}
+    assert next(p for p in he.params if p.name == "image").axes.optional == frozenset()
+
+
 def test_enum_params_carry_their_choices():
-    spec = BY_NAME["skop.ops.segment.stardist2d:stardist2d"]
+    spec = BY_NAME["skop.ops.segment.starfun3d:segment_nuclei"]
     model = next(p for p in spec.params if p.name == "model")
-    assert [m.value for m in model.type] == ["2D_versatile_fluo", "2D_versatile_he"]
+    assert [m.value for m in model.type] == ["confocal", "sospim", "spinning"]
 
 
 def test_unseg_reports_counts_alongside_masks():

@@ -13,20 +13,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._adapt import AdaptationPlan, plans
+from ._adapt import ITERATE, PASS, SELECT, AdaptationPlan, plan
 from ._progress import cancel_requested, progress
 from ._spec import (
     COMPUTER,
     FUNCTION,
     INPLACE,
     Axes,
-    Extra,
     Mut,
     OpSpec,
     Out,
     OutputSpec,
     ParamSpec,
     Role,
+    Slot,
     is_op,
     op,
     spec,
@@ -36,9 +36,11 @@ __all__ = [
     "COMPUTER",
     "FUNCTION",
     "INPLACE",
+    "ITERATE",
+    "PASS",
+    "SELECT",
     "AdaptationPlan",
     "Axes",
-    "Extra",
     "Mut",
     "OpSpec",
     "Out",
@@ -46,11 +48,12 @@ __all__ = [
     "ParamSpec",
     "Role",
     "Runner",
+    "Slot",
     "cancel_requested",
     "discover",
     "is_op",
     "op",
-    "plans",
+    "plan",
     "progress",
     "run",
     "spec",

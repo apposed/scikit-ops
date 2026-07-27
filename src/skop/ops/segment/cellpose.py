@@ -9,7 +9,7 @@ from typing import Annotated
 
 import numpy as np
 
-from skop import Axes, Extra, op, progress
+from skop import Axes, op, progress
 from skop.types import ImageData, LabelsData
 
 from .._util import to_gray
@@ -17,7 +17,7 @@ from .._util import to_gray
 
 @op(env="cellpose")
 def cellpose(
-    image: Annotated[ImageData, Axes("y", "x", "c?", extra=Extra.iterate)],
+    image: Annotated[ImageData, Axes("y", "x", "c?")],
     diameter: Annotated[
         float,
         {"widget_type": "FloatSpinBox", "min": 0.0, "max": 1000.0, "step": 1.0},

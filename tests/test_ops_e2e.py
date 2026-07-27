@@ -103,20 +103,20 @@ def test_synthetic_nuclei(runner):
 
 @pytest.mark.env("stardist-tf")
 def test_stardist2d(runner):
-    from skop.ops.segment import stardist2d
+    from skop.ops.segment import stardist2d_fluo
 
-    labels = runner.run(stardist2d, image=blobs_2d())
+    labels = runner.run(stardist2d_fluo, image=blobs_2d())
     assert labels.dtype == np.uint16
     assert labels.max() == 5
 
 
 @pytest.mark.env("stardist-tf")
 def test_stardist2d_reports_progress(runner):
-    from skop.ops.segment import stardist2d
+    from skop.ops.segment import stardist2d_fluo
 
     messages = []
     runner.run(
-        stardist2d,
+        stardist2d_fluo,
         image=blobs_2d(),
         on_progress=lambda event: messages.append(event.message),
     )

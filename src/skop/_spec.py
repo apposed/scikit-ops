@@ -96,80 +96,98 @@ def canonical(label: str) -> str:
     return ALIASES.get(folded, folded)
 
 
-class Extra(Enum):
-    """What an op permits a caller to do with axes it does not consume.
+#: The spelling for a slot with no name preference at all.
+WILDCARD = "*"
 
-    ``iterate`` is a scientific claim -- that slices along those axes are
-    independent -- so only an op author can make it, and the default does
-    not make it for them.
 
-    Note that indexing a stack down to a single plane is *not* gated on
-    this. An op declaring ``("y", "x")`` said it accepts a plane; handing it
-    one honors the declaration. Iterating is the author's claim to make;
-    selecting is the user's decision.
+@dataclass(frozen=True)
+class Slot:
+    """One axis an image parameter consumes.
+
+    ``name`` is a *hint*, not a requirement: it biases which of the caller's
+    axes lands here, and a mismatch is reported rather than refused. A wildcard
+    slot (``name`` is None) has no preference at all.
     """
 
-    reject = "reject"
-    iterate = "iterate"
-    passthrough = "passthrough"
+    name: str | None
+    optional: bool = False
+
+    def __str__(self) -> str:
+        return (self.name or WILDCARD) + ("?" if self.optional else "")
 
 
 @dataclass(frozen=True, init=False)
 class Axes:
-    """The axes an image parameter expects, in the order it wants them.
+    """How many axes an image parameter consumes, and what it likes to call them.
 
-    One argument is one axis label, or a single iterable gives them all, and a
-    trailing ``?`` marks that axis optional::
+    One argument is one slot, or a single iterable gives them all. A trailing
+    ``?`` marks a slot optional, and ``"*"`` is a slot with no name preference::
 
-        Axes("y", "x")                             # strictly 2-D
-        Axes(list("zyx"))                          # strictly 3-D
-        Axes("y", "x", "c?", extra=Extra.iterate)  # 2-D, tolerates channels,
-                                                   # may be mapped over others
+        Axes("y", "x")        # two axes; prefers to call them y and x
+        Axes(list("zyx"))     # three
+        Axes("y", "x", "c?")  # two, plus a channel axis if one is there
+        Axes("*", "*")        # two axes, no opinion which
+        Axes(variadic=True)   # any number of axes, whatever they are
 
-    A label is any string. ``CANONICAL`` names are privileged only in that a
-    viewer knows how to display them; ``Axes("lifetime", "y", "x")`` is
-    equally valid, and an op that merely iterates over an axis never needs to
-    know what it means. Labels are resolved through ``canonical``, so an op
-    declaring ``"y"`` is satisfied by an array labelled ``"row"``.
+    **Names are hints, never requirements.** A 2-D triangulation works on
+    ``y x``, ``z x`` and ``z y`` alike, so a name only biases the default
+    mapping; handing an op axes it did not name is reported through
+    ``AdaptationPlan.warnings``, never refused. What binds is the *arity* --
+    how many axes the op consumes -- because that is the part the op's own
+    indexing depends on. Names resolve through ``canonical``, so a slot named
+    ``"y"`` prefers an array axis labelled ``"row"``.
+
+    ``variadic`` says the op copes with any number of further axes on its own:
+    global thresholding is happy with 1-D, a plane or a whole volume, so a
+    caller's leftover axes may be folded into the call rather than looped over.
 
     Attached through ``Annotated``, like a role, and read back off
     ``ParamSpec.axes``. It is inert at runtime: an op annotated this way is
     still called with whatever the caller passes when called directly.
     """
 
-    names: tuple[str, ...]
-    optional: frozenset[str]
-    extra: Extra
+    slots: tuple[Slot, ...]
+    variadic: bool
 
-    def __init__(self, *names: Any, extra: Extra = Extra.reject) -> None:
+    def __init__(self, *names: Any, variadic: bool = False) -> None:
         # Note: frozen blocks ordinary assignment, so a hand-written __init__
         # has to set fields the way dataclass itself does. Storing the parsed
-        # labels rather than the raw text is what makes Axes("z", "y", "x")
-        # and Axes("pln", "row", "col") compare equal, as they should.
+        # slots rather than the raw text is what makes Axes("z", "y", "x") and
+        # Axes("pln", "row", "col") compare equal, as they should.
         if len(names) == 1 and not isinstance(names[0], str):
             # A lone non-string is the sequence itself: Axes(list("zyx")).
             names = tuple(names[0])
-        parsed, optional = _parse_labels(names)
-        object.__setattr__(self, "names", parsed)
-        object.__setattr__(self, "optional", frozenset(optional))
-        object.__setattr__(self, "extra", extra)
+        object.__setattr__(self, "slots", _parse_slots(names))
+        object.__setattr__(self, "variadic", variadic)
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Each slot's preferred name, with ``"*"`` standing in for a wildcard."""
+        return tuple(str(slot).removesuffix("?") for slot in self.slots)
+
+    @property
+    def optional(self) -> frozenset[str]:
+        """Names of the slots that need not be filled."""
+        return frozenset(
+            slot.name for slot in self.slots if slot.optional and slot.name
+        )
 
     @property
     def core(self) -> tuple[str, ...]:
-        """The axes that must be present."""
-        return tuple(name for name in self.names if name not in self.optional)
+        """Preferred names of the slots that must be filled."""
+        return tuple(str(slot) for slot in self.slots if not slot.optional)
 
     def __repr__(self) -> str:
-        shown = ", ".join(
-            repr(name + "?" if name in self.optional else name) for name in self.names
-        )
-        return f"Axes({shown}, extra={self.extra})"
+        shown = ", ".join(repr(str(slot)) for slot in self.slots)
+        if self.variadic:
+            shown = f"{shown}, variadic=True" if shown else "variadic=True"
+        return f"Axes({shown})"
 
 
-def _parse_labels(names: tuple[str, ...]) -> tuple[tuple[str, ...], list[str]]:
-    """Validate axis labels, splitting off the ones marked optional."""
-    parsed: list[str] = []
-    optional: list[str] = []
+def _parse_slots(names: tuple[Any, ...]) -> tuple[Slot, ...]:
+    """Validate slot spellings, resolving names and splitting off the '?'."""
+    slots: list[Slot] = []
+    seen: set[str] = set()
     for label in names:
         if label == "?":
             raise ValueError(
@@ -182,13 +200,28 @@ def _parse_labels(names: tuple[str, ...]) -> tuple[tuple[str, ...], list[str]]:
                 f"Axis label {label!r} has a separator in it; pass one label "
                 "per argument, as Axes('z', 'y', 'x')."
             )
-        name = canonical(label.removesuffix("?"))
-        if name in parsed:
+        optional = label.endswith("?")
+        text = label.removesuffix("?")
+        if text == WILDCARD:
+            if optional:
+                # A wildcard has no name, and an optional slot is filled only
+                # by a name match, so '*?' could never be filled by anything.
+                raise ValueError(
+                    "'*?' is not a usable slot: a wildcard has no name to match "
+                    "on, and an optional slot is filled only by name. Use '*' "
+                    "for an axis the op always takes, or variadic=True for a "
+                    "tail of axes it may or may not be given."
+                )
+            # Wildcards are exempt from the repeat check: Axes('*', '*') is
+            # two axes the op has no opinion about, which is the whole point.
+            slots.append(Slot(None, False))
+            continue
+        name = canonical(text)
+        if name in seen:
             raise ValueError(f"Repeated axis {name!r} in {names}")
-        parsed.append(name)
-        if label.endswith("?"):
-            optional.append(name)
-    return tuple(parsed), optional
+        seen.add(name)
+        slots.append(Slot(name, optional))
+    return tuple(slots)
 
 
 class _Direction:

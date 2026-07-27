@@ -1,5 +1,14 @@
 # 0005 — Dimensional adaptation
 
+> **Superseded in part by [0006](0006-axis-mapping.md).** The `Extra` policy
+> (`reject` / `iterate` / `passthrough`), the requirement that declared axis
+> names *match*, and the `plans()` enumeration described below have all been
+> replaced: an op now declares arity plus name *hints*, and the mapping belongs
+> to the user. 0006 records why. The rest of this document — roles meeting
+> axes, iteration running in the worker, role-aware stacking, and the refusal
+> to guess what an array's axes are — still holds, and the reasoning is kept
+> here as written.
+
 ## The problem
 
 `stardist2d` is 2-D only. Its signature said so nowhere:
@@ -37,11 +46,14 @@ optional: `Axes("y", "x", "c?")` is "two spatial axes, and I cope with a
 channel axis if one is there".
 
 **An axis label is any string**, and that is deliberate. `CANONICAL` — `x y z c
-t`, the intersection of OME-NGFF, bioimage.io and ImgLib2's `AxisType` — is
-privileged only in that a viewer knows how to *display* those; it is not the
-vocabulary. There is no agreed letter for a lifetime bin, a well, an excitation
-wavelength or a polarization angle, and napari is n-D precisely to carry them.
-`Axes("lifetime", "y", "x")` is as valid as `Axes("z", "y", "x")`.
+t`, the intersection of OME-NGFF, bioimage.io and ImageJ2/ImgLib2's `AxisType`
+(ImageJ2's `AxisType` is an identity, like `name` below, not the coarser `type`
+category two paragraphs down — the two are easy to conflate since both go by
+"axis type") — is privileged only in that a viewer knows how to *display*
+those; it is not the vocabulary. There is no agreed letter for a lifetime bin,
+a well, an excitation wavelength or a polarization angle, and napari is n-D
+precisely to carry them. `Axes("lifetime", "y", "x")` is as valid as
+`Axes("z", "y", "x")`.
 
 Almost nothing pays for that openness, because an axis an op does not consume
 is one it never has to understand: the planner needs axis *identity and order*,

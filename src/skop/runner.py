@@ -214,18 +214,18 @@ class Runner:
             variant: Optional named pixi sub-environment (e.g. ``"cuda"``).
             axes: What each array argument actually is, as ``{"image":
                 list("zyx")}`` or ``{"image": ("pln", "row", "col")}``. Naming
-                them lets skop fit them to what the op declared -- transposing,
+                them lets skop fit them to what the op consumes -- transposing,
                 or iterating a 2-D op over a stack. An axis label is any
                 string, so ``("lifetime", "y", "x")`` works as well as the
                 canonical letters, and known synonyms resolve to them.
                 Unnamed arrays are passed through untouched.
-            plans: Explicit ``AdaptationPlan``s, from ``skop.plans``, for
-                callers that want to make the choice themselves. Overrides
-                ``axes`` for the parameters it names. Supply one whenever the
-                adaptation would discard data: skop will not choose that
-                on its own.
+            plans: Explicit ``AdaptationPlan``s, from ``skop.plan``, for
+                callers making the per-axis decisions themselves. Overrides
+                ``axes`` for the parameters it names. The plan skop builds on
+                its own never discards data, so supply one whenever that is
+                what you actually want.
             position: Current position along each axis, used only when a
-                supplied plan or a chosen one indexes down to a single plane.
+                supplied plan indexes down to a single plane.
             on_progress: Called with each Appose TaskEvent as it arrives.
             on_start: Called with the Appose Task once it has been submitted.
                 This call blocks until the op finishes, so a caller wanting to
@@ -335,9 +335,7 @@ def _adaptations(
     for name, labels in (axes or {}).items():
         if name in chosen:
             continue
-        chosen[name] = _adapt.choose(
-            _adapt.plans(fn, name, args[name], labels, position)
-        )
+        chosen[name] = _adapt.plan(fn, name, args[name], labels, position)
     return chosen
 
 
