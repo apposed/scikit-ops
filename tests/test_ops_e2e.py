@@ -101,6 +101,94 @@ def test_synthetic_nuclei(runner):
     assert volume.max() > volume.min()
 
 
+def rainbow_pancakes() -> np.ndarray:
+    """A slicewise segmentation of two touching columns, renumbered per slice.
+
+    What any 2-D op iterated over Z produces: each slice is correct on its own
+    terms, and no two slices agree on what to call anything.
+    """
+    stack = np.zeros((6, 24, 24), dtype=np.uint16)
+    for z in range(6):
+        left, right = (7, 3) if z % 2 else (1, 2)
+        stack[z, 4:16, 4:12] = left
+        stack[z, 4:16, 12:20] = right  # Shares an edge with the left column.
+    stack[3:, 18:22, 2:8] = 9  # A third object, starting partway up.
+    return stack
+
+
+@pytest.mark.env("skimage")
+def test_connect(runner):
+    from skop.ops.labels import connect
+
+    stack = rainbow_pancakes()
+    out = runner.run(connect, labels=stack)
+
+    assert out.shape == stack.shape
+    # Three objects, numbered consecutively however the slices were numbered.
+    assert set(np.unique(out)) == {0, 1, 2, 3}
+    # Every slice agrees, and the two touching columns stay two objects.
+    left = {int(out[z, 8, 8]) for z in range(6)}
+    right = {int(out[z, 8, 16]) for z in range(6)}
+    assert len(left) == len(right) == 1
+    assert left != right
+    # The late object exists only where it existed before connecting.
+    late = int(out[4, 20, 4])
+    assert late not in left | right
+    assert np.array_equal(out == late, stack == 9)
+
+
+@pytest.mark.env("skimage")
+def test_connect_threshold_and_criterion(runner):
+    from skop.ops.labels import connect
+
+    # An object that barely grazes its successor: linked on any overlap, but
+    # not at the default threshold.
+    grazing = np.zeros((2, 16, 16), dtype=np.uint16)
+    grazing[0, 0:9, 0:9] = 1
+    grazing[1, 8:16, 8:16] = 1
+    assert runner.run(connect, labels=grazing).max() == 2
+    assert runner.run(connect, labels=grazing, threshold=0.0).max() == 1
+
+    # An object that shrinks sharply: too small a union for IoU, but fully
+    # contained, which is what 'iop' scores on.
+    shrinking = np.zeros((2, 16, 16), dtype=np.uint16)
+    shrinking[0, 0:12, 0:12] = 1
+    shrinking[1, 0:3, 0:3] = 1
+    assert runner.run(connect, labels=shrinking).max() == 2
+    assert runner.run(connect, labels=shrinking, criterion="iop").max() == 1
+
+
+@pytest.mark.env("skimage")
+def test_connect_gaps_are_not_closed(runner):
+    from skop.ops.labels import connect
+
+    # An object missing from the middle slice starts over rather than
+    # reclaiming its old label, which is the documented behaviour.
+    stack = np.zeros((3, 16, 16), dtype=np.uint16)
+    stack[0, 2:8, 2:8] = 1
+    stack[2, 2:8, 2:8] = 1
+    out = runner.run(connect, labels=stack)
+    assert out[0, 4, 4] != out[2, 4, 4]
+    assert set(np.unique(out)) == {0, 1, 2}
+
+
+@pytest.mark.env("skimage")
+def test_otsu_then_connect(runner):
+    from skop.ops.labels import connect
+    from skop.ops.threshold import otsu
+
+    # The pairing this op exists for: threshold each plane on its own, which
+    # numbers each plane on its own, then reconcile the numbering.
+    volume = np.zeros((5, 64, 64), dtype=np.uint8)
+    volume[:, 8:24, 8:24] = 200
+    volume[:, 40:56, 40:56] = 220
+    sliced = np.stack([runner.run(otsu, image=plane) for plane in volume])
+    out = runner.run(connect, labels=sliced)
+
+    assert set(np.unique(out)) == {0, 1, 2}
+    assert len({int(out[z, 16, 16]) for z in range(5)}) == 1
+
+
 @pytest.mark.env("stardist-tf")
 def test_stardist2d(runner):
     from skop.ops.segment import stardist2d_fluo

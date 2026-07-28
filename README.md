@@ -41,6 +41,7 @@ sharing an environment also share a warm worker process, unless one asks for
 | `skop.ops.segment.stardist2d:stardist2d_fluo` | `stardist-tf` | StarDist 2D, pretrained fluorescence |
 | `skop.ops.segment.stardist2d:stardist2d_he` | `stardist-tf` | StarDist 2D, pretrained H&E |
 | `skop.ops.segment.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
+| `skop.ops.labels:connect` | `skimage` | One label per object along an axis, by linking overlaps |
 | `skop.ops.generate:synthetic_nuclei` | `skimage` | Synthetic 3D test volume |
 | `skop.ops.segment.unseg:unseg` | `unseg-cv` | Unsupervised nuclei + cells |
 | `skop.ops.detect.fastsam:fastsam` | `pytorch` | Class-agnostic boxes, via FastSAM |
