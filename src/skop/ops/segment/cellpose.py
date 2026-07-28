@@ -1,6 +1,15 @@
-"""Cellpose segmentation.
+"""Cellpose segmentation, on the CellposeSAM model of version 4.
 
 Ported from src/imgops/implementations/cellpose.py.
+
+Runs in the shared 'pytorch' environment rather than one of its own. Cellpose
+4 is a maintained conda package that solves alongside ultralytics and
+micro_sam, so it is exactly the occupant that environment exists for (0002):
+one build, one warm worker, shared by several ops.
+
+Cellpose 3 is the exception, in ``cellpose3.py`` and an environment of its
+own -- version 4 replaced the model zoo and moved the API, so no pin makes
+them coexist.
 """
 
 from __future__ import annotations
@@ -15,7 +24,7 @@ from skop.types import ImageData, LabelsData
 from .._util import to_gray
 
 
-@op(env="cellpose")
+@op(env="pytorch")
 def cellpose(
     image: Annotated[ImageData, Axes("y", "x", "c?")],
     diameter: Annotated[

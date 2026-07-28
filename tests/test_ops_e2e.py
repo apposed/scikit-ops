@@ -490,6 +490,17 @@ def check_cellpose(result, image, expected: int) -> None:
     assert result.max() == expected, f"found {result.max()} objects, wanted {expected}"
 
 
+@pytest.mark.env("pytorch")
+def test_cellpose_sam_segments_round_cells(runner):
+    # Guards the environment merge as much as the op: Cellpose 4 moved out of
+    # envs/cellpose and into the shared pytorch environment, where it has to
+    # coexist with ultralytics and micro_sam.
+    from skop.ops.segment import cellpose
+
+    image = coins_like()
+    check_cellpose(runner.run(cellpose, image=image, diameter=0.0), image, 5)
+
+
 @pytest.mark.env("cellpose3")
 def test_cellpose3_segments_round_cells(runner):
     # The v3 model zoo, kept because a model finetuned on your organism can

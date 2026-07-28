@@ -9,12 +9,15 @@ version = "0.1.0"
 # large and slow, so anything torch-based that solves cleanly alongside what is
 # already here belongs here rather than in an environment of its own.
 #
-# micro_sam is the second occupant, for the mask detector of docs/design/0008.
-# Cellpose is the next intended one, and adding it is known to work:
-# `ultralytics + cellpose >4 + micro_sam >1.6 + pytorch-gpu` resolves from
-# conda-forge alone, with no PyPI packages at all, on python 3.11 /
-# torch 2.7.1 / cuda 12.9. It is left out until its op moves here, so this
-# does not install a stack nothing uses.
+# Three occupants now: ultralytics for the FastSAM detector, micro_sam for the
+# mask detector of docs/design/0008, and Cellpose, whose own environment this
+# replaced. They resolve together from conda-forge alone, with no PyPI
+# packages at all -- which is the whole premise of this environment, and the
+# reason envs/cellpose is gone rather than maintained alongside it.
+#
+# envs/cellpose3 stays separate, and is the exception that shows the rule:
+# Cellpose 4 replaced the v3 model zoo and moved the API with it, so the two
+# cannot share an environment at any version pin.
 
 [system-requirements]
 cuda = "12.0"
@@ -23,6 +26,7 @@ cuda = "12.0"
 python = "3.11.*"
 numpy = "*"
 ultralytics = ">=8.3"
+cellpose = ">=4"
 appose = ">=0.11"
 
 # NB: micro_sam depends on `napari >=0.5,<0.6` and `pyqt` outright -- it ships
