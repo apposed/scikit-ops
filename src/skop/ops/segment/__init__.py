@@ -9,12 +9,14 @@ than generated, so that an IDE can offer them.
 from __future__ import annotations
 
 from .cellpose import cellpose
+from .cellpose3 import cellpose3
 from .stardist2d import stardist2d_fluo, stardist2d_he
 from .starfun3d import segment_nuclei
 from .unseg import unseg
 
 __all__ = [
     "cellpose",
+    "cellpose3",
     "segment_nuclei",
     "stardist2d_fluo",
     "stardist2d_he",

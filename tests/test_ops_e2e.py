@@ -481,6 +481,42 @@ def coins_like(height: int = 200, width: int = 320) -> np.ndarray:
     return (image * 200 + 20).astype(np.uint8)
 
 
+def check_cellpose(result, image, expected: int) -> None:
+    """Assertions either Cellpose op has to satisfy."""
+    assert result.shape == image.shape
+    assert result.dtype == np.uint16
+    # Round blobs on a flat background are the easiest thing Cellpose does.
+    # An off-by-a-few count is a model difference; zero is a broken op.
+    assert result.max() == expected, f"found {result.max()} objects, wanted {expected}"
+
+
+@pytest.mark.env("cellpose3")
+def test_cellpose3_segments_round_cells(runner):
+    # The v3 model zoo, kept because a model finetuned on your organism can
+    # still beat the generalist that replaced it.
+    #
+    # NB: an explicit diameter, unlike the CellposeSAM test above. cyto3's
+    # size model reads these synthetic discs as far smaller than they are and
+    # then finds nothing at all -- at diameter=0 or 30 it returns an empty
+    # label image, at 50 it finds all five. That is a real difference between
+    # the two models rather than a broken op, and it is the reason the size
+    # estimate is worth overriding on anything that does not look like cells.
+    from skop.ops.segment import cellpose3
+
+    image = coins_like()
+    check_cellpose(runner.run(cellpose3, image=image, diameter=50.0), image, 5)
+
+
+@pytest.mark.env("cellpose3")
+def test_cellpose3_estimates_diameter_on_softer_objects(runner):
+    # Where the size model does work, so that the test above is understood as
+    # a property of that image and not as "auto never works".
+    from skop.ops.segment import cellpose3
+
+    image = blobs_2d()
+    check_cellpose(runner.run(cellpose3, image=image, diameter=0.0), image, 5)
+
+
 @pytest.mark.env("pytorch")
 def test_fastsam_finds_objects_of_no_particular_class(runner):
     from skop.ops.detect import fastsam

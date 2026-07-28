@@ -1,0 +1,41 @@
+[workspace]
+name = "skop-cellpose3"
+description = "Cellpose 3, whose cyto3 and nuclei models predate CellposeSAM."
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64", "win-64"]
+version = "0.1.0"
+
+[system-requirements]
+cuda = "12.0"
+
+# NB: an environment of its own rather than a version knob on envs/cellpose.
+# Cellpose 4 replaced the model zoo with a single CellposeSAM model and moved
+# the API with it -- v3's models.Cellpose became v4's models.CellposeModel,
+# and eval lost a return value. One environment cannot hold both, and an op
+# that branched on cellpose.version would be back to the runtime version
+# sniffing this project exists to avoid.
+#
+# Deliberately shaped like envs/pytorch and envs/cellpose otherwise: same
+# python, same per-platform torch split. pixi caches conda packages globally,
+# so the torch and CUDA payload is shared with those environments rather than
+# downloaded again -- provided cellpose 3 does not drag the solve onto older
+# builds of them. It is the one thing worth watching in the lock file.
+[dependencies]
+python = "3.11.*"
+numpy = "*"
+cellpose = ">=3,<4"
+appose = ">=0.11"
+
+# PyTorch varies by platform: CUDA builds where there are GPUs to use,
+# and the plain package on Apple Silicon, where MPS comes built in.
+[target.linux-64.dependencies]
+pytorch-gpu = "*"
+cudnn = "*"
+cuda-version = "12.2"
+
+[target.win-64.dependencies]
+pytorch-gpu = "*"
+cudnn = "*"
+
+[target.osx-arm64.dependencies]
+pytorch = "*"
