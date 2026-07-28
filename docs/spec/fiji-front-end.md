@@ -1,6 +1,6 @@
 # Spec — a Fiji front end
 
-**Status:** P0 and P1 built; P2 onward still proposed. The plan for
+**Status:** P0, P1 and P2 built; P3 onward still proposed. The plan for
 `skop-fiji`, the second front end, written against what
 [front-ends.md](front-ends.md) says the boundary is and what
 [skop-napari](https://github.com/apposed/skop-napari) learned building the
@@ -220,6 +220,11 @@ that adds the mapping items once a `Dataset` is selected. If that proves
 unworkable, fall back to accepting skop's default plan and surfacing its
 warnings, which never discards data — but that is the fallback, not the plan.
 
+P2 ships the fallback, and it is worth more than it sounds: a strictly 2-D op
+handed a stack is iterated over it with nothing asked of anyone, because an
+`ImgPlus` already said what its axes were. The UI is what turns a default into
+a choice, and that is still P4.
+
 ## Threading, progress, cancellation, errors
 
 SciJava already runs modules off the EDT, so there is no equivalent of
@@ -267,7 +272,7 @@ wire/                the OpSpec JSON reading
 | --- | --- |
 | **P0** | ✅ In scikit-ops: `OpSpec` JSON, `describe` and `plan` tasks, the pinned git dependency in each `pixi.toml` |
 | **P1** | ✅ `SkopRunner` plus a headless test running `toy:add` and `threshold:otsu` on a `ShmImg` from Java. No UI. This proves the whole boundary, and is where the axis-order bug surfaces |
-| **P2** | Dynamic module registration, image in and image out, progress, cancel, errors. The first shippable thing |
+| **P2** | ✅ Dynamic module registration, image in and image out, progress, cancel, errors. The first shippable thing |
 | **P3** | The rest of the roles: `ImgLabeling`, ROIs, tables, masks into the ROI Manager |
 | **P4** | Axis-mapping UI, environment manager, update site, macro-recording polish |
 
