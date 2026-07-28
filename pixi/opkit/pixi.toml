@@ -9,7 +9,7 @@ version = "0.1.0"
 cuda = "12.0"
 
 [dependencies]
-python = "3.11.*"
+python = "3.12.*"
 napari = "*"
 pyqt = "*"
 cellpose = ">=4"
@@ -29,7 +29,7 @@ cudnn = "*"
 pytorch = "*"
 
 [pypi-dependencies]
-naplari-hacking = { path = "../..", editable = true }
+scikit-ops = { path = "../..", editable = true }
 appose = "*"
 
 [tasks]
