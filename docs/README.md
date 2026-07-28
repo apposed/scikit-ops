@@ -36,3 +36,4 @@ load-bearing.
 | --- | --- |
 | [form-adaptation.md](spec/form-adaptation.md) | Calling a computer op as a function, and back |
 | [front-ends.md](spec/front-ends.md) | What a second front end (Fiji) needs from here |
+| [fiji-front-end.md](spec/fiji-front-end.md) | What that front end looks like: one command per op, Java as the host |
