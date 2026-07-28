@@ -26,12 +26,21 @@ class Role(Enum):
     not napari-specific: a magicgui-only front end maps roles onto widgets,
     and Fiji maps them onto ImgLib2 types.
 
+    ``masks`` is the one member that does not name a layer type, and it is a
+    deliberate stretch rather than an oversight. A stack of possibly
+    overlapping masks is not something a viewer displays directly, but it maps
+    onto something that is -- a front end projects it to a label image with
+    ``skop.masks``. The role still answers "which layer does this become",
+    it just answers with a conversion rather than an identity. See
+    docs/design/0008-mask-detector-ops.md.
+
     Roles are attached through ``skop.types``, or directly with
     ``Annotated[T, Role.<name>]`` for a role having no alias.
     """
 
     image = "image"
     labels = "labels"
+    masks = "masks"
     points = "points"
     shapes = "shapes"
     surface = "surface"

@@ -409,6 +409,85 @@ def test_object_aware_yolo_finds_objects_of_no_particular_class(runner):
     check_boxes(runner.run(object_aware_yolo, image=image), image.shape)
 
 
+def check_masks(result, image, prompts) -> None:
+    """Assertions every mask detector's output has to satisfy."""
+    import numpy as np
+
+    from skop import boxes as skop_boxes
+    from skop import masks as skop_masks
+
+    assert len(result.masks) == len(prompts)
+    assert result.masks.shape[1:] == image.shape
+    assert result.masks.dtype == np.uint8
+    assert set(np.unique(result.masks)) <= {0, 1}
+    # Empty prompts are dropped from both, so these stay parallel.
+    assert len(result.boxes) == len(result.masks)
+    assert np.array_equal(result.boxes, prompts)
+
+    for i, box in enumerate(prompts):
+        mask = result.masks[i]
+        # A disc inscribed in its prompt fills about pi/4 of it. Well under
+        # that means SAM found an edge instead of the object; at 1.0 it
+        # returned the box it was given.
+        min_y, min_x, max_y, max_x = box.astype(int)
+        inside = mask[min_y:max_y, min_x:max_x].sum()
+        assert inside == mask.sum(), "mask escaped the box it was prompted with"
+        fraction = inside / ((max_y - min_y) * (max_x - min_x))
+        assert 0.3 < fraction < 0.95, f"mask {i} fills {fraction:.2f} of its prompt"
+
+    # The whole reason these are not a label image: the projection is lossy,
+    # and going through it is what a front end will do.
+    labels = skop_masks.to_labels_2d(result.masks)
+    assert labels.shape == image.shape
+    assert len(np.unique(labels)) == len(prompts) + 1  # the discs, plus 0
+    assert skop_boxes.from_labels(labels).shape == (len(prompts), 4)
+
+
+def coin_prompts() -> np.ndarray:
+    """Boxes around the discs coins_like() draws, generous enough to be hints.
+
+    Loose on purpose: if a detector returned its prompt unchanged the fill
+    fraction in check_masks would be 1.0 and the test would catch it.
+    """
+    return np.array(
+        [[28, 28, 92, 92], [30, 130, 90, 190], [26, 226, 94, 294]],
+        dtype=np.float32,
+    )
+
+
+@pytest.mark.env("pytorch")
+def test_microsam_segments_what_it_is_prompted_with(runner):
+    from skop.ops.mask import microsam_masks
+
+    image = coins_like()
+    prompts = coin_prompts()
+    check_masks(runner.run(microsam_masks, image=image, boxes=prompts), image, prompts)
+
+
+@pytest.mark.env("segment-everything")
+def test_mobilesam_segments_what_it_is_prompted_with(runner):
+    from skop.ops.mask import mobilesam_masks
+
+    image = coins_like()
+    prompts = coin_prompts()
+    check_masks(runner.run(mobilesam_masks, image=image, boxes=prompts), image, prompts)
+
+
+@pytest.mark.env("segment-everything")
+def test_mobilesam_batches_without_changing_the_answer(runner):
+    from skop.ops.mask import mobilesam_masks
+
+    # batch_size trades GPU memory for decoder calls and must not touch the
+    # result. Two prompts in one batch, then in two -- the path where the
+    # original narrowed its cached embeddings in place.
+    image = coins_like()
+    prompts = coin_prompts()
+
+    one = runner.run(mobilesam_masks, image=image, boxes=prompts, batch_size=100)
+    many = runner.run(mobilesam_masks, image=image, boxes=prompts, batch_size=2)
+    assert np.array_equal(one.masks, many.masks)
+
+
 @pytest.mark.env("pytorch")
 @pytest.mark.env("segment-everything")
 def test_both_detectors_agree_there_are_objects(runner):

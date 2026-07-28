@@ -13,7 +13,7 @@ def some_detector(image: ImageData, ...) -> Boxes   # NamedTuple(boxes, scores)
 ```
 
 This is stage one of the segmenter in [0005](0005-workflow-ops.md), feeding a
-mask detector ([0008](0008-microsam-mask-detector.md)). There are many possible
+mask detector ([0008](0008-mask-detector-ops.md)). There are many possible
 implementations — FastSAM, MobileSAMv2's `ObjectAwareModel`, Faster R-CNN, a
 classical threshold-and-`regionprops` detector, boxes from an existing label
 image — and the point of the kind is that the segmenter workflow can hold a

@@ -9,11 +9,12 @@ version = "0.1.0"
 # large and slow, so anything torch-based that solves cleanly alongside what is
 # already here belongs here rather than in an environment of its own.
 #
-# Cellpose and micro_sam are the next intended occupants, and adding them is
-# known to work: `ultralytics + cellpose >4 + micro_sam >1.6 + pytorch-gpu`
-# resolves from conda-forge alone, with no PyPI packages at all, on
-# python 3.11 / torch 2.7.1 / cuda 12.9. They are left out until their ops
-# move here, so this does not install a stack nothing uses.
+# micro_sam is the second occupant, for the mask detector of docs/design/0008.
+# Cellpose is the next intended one, and adding it is known to work:
+# `ultralytics + cellpose >4 + micro_sam >1.6 + pytorch-gpu` resolves from
+# conda-forge alone, with no PyPI packages at all, on python 3.11 /
+# torch 2.7.1 / cuda 12.9. It is left out until its op moves here, so this
+# does not install a stack nothing uses.
 
 [system-requirements]
 cuda = "12.0"
@@ -23,6 +24,17 @@ python = "3.11.*"
 numpy = "*"
 ultralytics = ">=8.3"
 appose = ">=0.11"
+
+# NB: micro_sam depends on `napari >=0.5,<0.6` and `pyqt` outright -- it ships
+# a napari plugin and does not split it out. So this environment installs a GUI
+# stack that nothing in it imports; the ops use micro_sam.util and
+# micro_sam.prompt_based_segmentation, neither of which touches napari. Heavy
+# but harmless: a worker process never opens a window, and 0002's whole point
+# is that this napari pin cannot reach the front end's.
+#
+# It also carries `zarr <3` and `xarray <2025.3` -- worth knowing when the next
+# occupant fails to solve.
+micro_sam = ">=1.6"
 
 # NB: torchvision is required explicitly even though nothing here imports it
 # directly. conda's ultralytics does not depend on it, but reads

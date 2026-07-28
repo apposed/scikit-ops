@@ -127,6 +127,13 @@ about how to display it. `skop.types` adds that missing half:
 | `VectorsData` | `Role.vectors` | a Vectors layer |
 | `TracksData` | `Role.tracks` | a Tracks layer |
 | `BoxesData` | `Role.shapes` | a Shapes layer |
+| `MasksData` | `Role.masks` | a Labels layer, once projected |
+
+`MasksData` is the odd one: an `(N, Y, X)` stack of masks that may overlap, so
+it is not a label image and no viewer shows it directly. A front end projects
+it with `skop.masks` — flattened to 2-D, or kept as a rotatable 3-D stack —
+and gets to offer that as a choice, since re-projecting costs a numpy call
+rather than another run of the op.
 
 They are `Annotated[np.ndarray, ...]` aliases, so nothing else changes: the
 codec still sees an array, direct callers still get an array, and

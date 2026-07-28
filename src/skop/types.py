@@ -34,6 +34,11 @@ ImageData = Annotated[np.ndarray, Role.image]
 #: A label image: integer object IDs, 0 for background.
 LabelsData = Annotated[np.ndarray, Role.labels]
 
+#: A stack of binary masks, as (N, Y, X) uint8, one object per plane. Unlike
+#: a label image these may overlap, which is why they are not one. See
+#: ``skop.masks`` for the projections a front end shows them through.
+MasksData = Annotated[np.ndarray, Role.masks]
+
 #: Coordinates, as (N, D) in axis order matching the image they came from.
 PointsData = Annotated[np.ndarray, Role.points]
 
@@ -51,6 +56,7 @@ __all__ = [
     "BoxesData",
     "ImageData",
     "LabelsData",
+    "MasksData",
     "PointsData",
     "Role",
     "TracksData",

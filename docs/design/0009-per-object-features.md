@@ -94,7 +94,7 @@ So this is not only about `scores`. It is about whether skop can express
 
 ## What would settle it
 
-The mask detector of [0008](0008-microsam-mask-detector.md) produces an area
+The mask detector of [0008](0008-mask-detector-ops.md) produces an area
 and possibly a stability score per mask, and a segmenter workflow
 ([0005](0005-workflow-ops.md)) will want to filter boxes by confidence before
 passing them on. Two more real cases, both arriving soon, and both of them will

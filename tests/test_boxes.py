@@ -39,6 +39,35 @@ def test_from_napari_accepts_four_corners():
     assert boxes.from_napari(rect).tolist() == [[20, 10, 40, 30]]
 
 
+def test_from_napari_accepts_the_list_a_shapes_layer_actually_holds():
+    # layer.data is one (V, 2) array per shape, not one array of shapes --
+    # which is what a mask detector was handed as (11, 4, 2) and rejected.
+    layer_data = [
+        np.array([[20, 10], [20, 30], [40, 30], [40, 10]], dtype=np.float32),
+        np.array([[0, 0], [5, 5]], dtype=np.float32),
+    ]
+    assert boxes.from_napari(layer_data).tolist() == [[20, 10, 40, 30], [0, 0, 5, 5]]
+
+
+def test_from_napari_handles_a_ragged_list_of_mixed_shape_types():
+    # A polygon beside a rectangle: different vertex counts, so np.asarray
+    # cannot make one array of it at all.
+    layer_data = [
+        np.array([[20, 10], [20, 30], [40, 30], [40, 10]], dtype=np.float32),
+        np.array([[0, 0], [10, 2], [6, 9], [1, 7], [3, 3]], dtype=np.float32),
+    ]
+    assert boxes.from_napari(layer_data).tolist() == [[20, 10, 40, 30], [0, 0, 10, 9]]
+
+
+def test_from_napari_of_an_empty_shapes_layer():
+    assert boxes.from_napari([]).shape == (0, 4)
+
+
+def test_from_napari_rejects_shapes_that_are_not_2d_coordinates():
+    with pytest.raises(ValueError, match=r"\(V, 2\)"):
+        boxes.from_napari([np.zeros((4, 3), dtype=np.float32)])
+
+
 def test_from_napari_collapses_a_rotated_rectangle_to_its_extent():
     rotated = np.array([[[0, 5], [5, 10], [10, 5], [5, 0]]], dtype=np.float32)
     assert boxes.from_napari(rotated).tolist() == [[0, 0, 10, 10]]

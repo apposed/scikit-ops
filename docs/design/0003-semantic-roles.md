@@ -49,6 +49,27 @@ deliberately *mirror* `napari.types` so that the napari mapping is a lookup
 table rather than a judgement call — but the vocabulary belongs to skop, and a
 Fiji or plain-magicgui front end reads exactly the same `Role`.
 
+### Amendment: one role does not name a layer type
+
+`Role.masks` was added by [0008](0008-mask-detector-ops.md), and it breaks the
+mirror above: napari has no Masks layer. The stretch is deliberate and worth
+recording rather than discovering.
+
+A mask detector returns `(N, Y, X)` binary masks that are allowed to overlap.
+That is not a label image — one pixel cannot hold two integers — and it is not
+any other layer either. But unlike the per-object features of
+[0009](0009-per-object-features.md), which have no display at all, it maps onto
+one *deterministically*: a front end projects it with `skop.masks` and gets a
+Labels layer. The role still answers "which layer does this become". It just
+answers with a conversion instead of an identity, and leaves the choice of
+conversion to the front end, where it is cheap to change.
+
+So the rule the vocabulary actually keeps is the weaker one: **a role names
+what a front end must do to display the value, and the mapping is still a
+lookup rather than a judgement.** Roles that name a layer directly are the
+common case, not the definition. A role that cannot answer the question at all
+still does not belong here.
+
 ## Roles are never guessed
 
 This is the load-bearing part. skop reports `role is None` for an unannotated

@@ -8,6 +8,8 @@ than mysteriously at run time.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 import skop
@@ -119,6 +121,68 @@ def test_detected_boxes_are_shapes():
     ):
         boxes = next(o for o in BY_NAME[name].output_specs if o.name == "boxes")
         assert boxes.role is Role.shapes
+
+
+MASK_DETECTORS = (
+    "skop.ops.mask.microsam:microsam_masks",
+    "skop.ops.mask.mobilesam:mobilesam_masks",
+)
+
+
+@pytest.mark.parametrize("name", MASK_DETECTORS)
+def test_mask_detector_takes_boxes_and_returns_masks_and_boxes(name):
+    # The two-stage contract: what a box detector returns is what this
+    # accepts, and what it returns says which prompts survived.
+    from skop import Role
+
+    spec = BY_NAME[name]
+    assert spec.outputs == ("masks", "boxes")
+
+    inputs = {p.name: p.role for p in spec.params}
+    assert inputs["image"] is Role.image
+    assert inputs["boxes"] is Role.shapes
+
+    outputs = {o.name: o.role for o in spec.output_specs}
+    # Not Role.labels: these overlap, and a front end has to project them
+    # before it can show them at all.
+    assert outputs["masks"] is Role.masks
+    assert outputs["boxes"] is Role.shapes
+
+
+def test_mask_detectors_are_substitutable():
+    # The same property the box detectors have, one stage downstream: a
+    # workflow offering a choice between them gets the same call and the same
+    # outputs either way, differing only in environment and in extras.
+    microsam, mobilesam = (BY_NAME[name] for name in MASK_DETECTORS)
+
+    assert microsam.env == "pytorch"
+    assert mobilesam.env == "segment-everything"
+    assert microsam.return_type is mobilesam.return_type
+
+    shared = ("image", "boxes")
+    for spec in (microsam, mobilesam):
+        assert shared == tuple(p.name for p in spec.params if p.name in shared)
+        # The shared core comes first; what differs is optional and trailing.
+        for param in spec.params:
+            if param.name not in shared:
+                assert param.default is not inspect.Parameter.empty
+
+
+def test_mask_detector_returns_nothing_without_loading_a_model():
+    # Reachable on the host precisely because the empty case short-circuits
+    # ahead of the micro_sam import -- which is also what keeps a workflow
+    # from loading 375 MB of weights to answer no prompts.
+    import numpy as np
+
+    from skop import boxes, masks
+    from skop.ops.mask import microsam_masks
+
+    result = microsam_masks(np.zeros((8, 9), dtype=np.uint8), boxes.EMPTY)
+
+    assert result.masks.shape == (0, 8, 9)
+    assert result.boxes.shape == (0, 4)
+    # An empty collection still projects to a blank image of the right size.
+    assert masks.to_labels_2d(result.masks).shape == (8, 9)
 
 
 def test_gaussian_psf_needs_no_environment_of_its_own():

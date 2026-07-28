@@ -26,6 +26,7 @@ import numpy as np
 
 __all__ = [
     "EMPTY",
+    "as_boxes",
     "from_labels",
     "from_napari",
     "from_xyxy",
@@ -38,8 +39,13 @@ __all__ = [
 EMPTY = np.zeros((0, 4), dtype=np.float32)
 
 
-def _as_boxes(boxes: object, name: str = "boxes") -> np.ndarray:
-    """Coerce to a well-formed ``(N, 4)`` float32 array."""
+def as_boxes(boxes: object, name: str = "boxes") -> np.ndarray:
+    """Coerce to a well-formed ``(N, 4)`` float32 array.
+
+    Public because every op *taking* boxes needs it: an op is called from a
+    front end, a workflow and a test, and only one of those is guaranteed to
+    have gone through a converter here first.
+    """
     array = np.asarray(boxes, dtype=np.float32)
     if array.size == 0:
         return EMPTY.copy()
@@ -53,7 +59,7 @@ def from_xyxy(boxes: object) -> np.ndarray:
 
     This is the swap that every YOLO-family detector needs on the way out.
     """
-    array = _as_boxes(boxes)
+    array = as_boxes(boxes)
     return array[:, [1, 0, 3, 2]].copy()
 
 
@@ -63,7 +69,7 @@ def to_xyxy(boxes: object) -> np.ndarray:
     The same permutation as :func:`from_xyxy` -- it is its own inverse -- but
     named for the direction, so call sites read correctly.
     """
-    array = _as_boxes(boxes)
+    array = as_boxes(boxes)
     return array[:, [1, 0, 3, 2]].copy()
 
 
@@ -75,18 +81,38 @@ def to_napari(boxes: object) -> np.ndarray:
 
         viewer.add_shapes(to_napari(result.boxes), shape_type="rectangle")
     """
-    array = _as_boxes(boxes)
+    array = as_boxes(boxes)
     return array.reshape(-1, 2, 2).copy()
 
 
 def from_napari(boxes: object) -> np.ndarray:
-    """Convert napari rectangles to canonical boxes.
+    """Convert napari shapes to canonical boxes.
 
-    Accepts both shapes napari produces: ``(N, 2, 2)`` opposite corners, and
-    ``(N, 4, 2)`` from a rectangle the user drew or rotated. A rotated
-    rectangle collapses to its axis-aligned extent, which is all a box can
-    say.
+    Accepts what a Shapes layer actually hands over, which is a *list* of
+    ``(V, 2)`` vertex arrays, one per shape -- and which goes ragged the
+    moment a polygon sits beside a rectangle, so it cannot be treated as one
+    array. A uniform ``(N, V, 2)`` array works too: ``(N, 2, 2)`` opposite
+    corners, or ``(N, 4, 2)`` from a rectangle the user drew.
+
+    Every shape collapses to its axis-aligned extent, which is all a box can
+    say. That is exact for an upright rectangle and a bounding box for
+    anything else -- a rotated rectangle, an ellipse, a hand-drawn polygon --
+    which is the useful answer in each case.
     """
+    # A list of arrays is the common case and cannot go through np.asarray:
+    # ragged input raises, and uniform input silently works, so the two would
+    # behave differently for the same layer on different days.
+    if isinstance(boxes, (list, tuple)):
+        shapes = [np.asarray(shape, dtype=np.float32) for shape in boxes]
+        if not shapes:
+            return EMPTY.copy()
+        for shape in shapes:
+            if shape.ndim != 2 or shape.shape[1] != 2:
+                raise ValueError(f"each napari shape must be (V, 2), got {shape.shape}")
+        lower = np.array([shape.min(axis=0) for shape in shapes], dtype=np.float32)
+        upper = np.array([shape.max(axis=0) for shape in shapes], dtype=np.float32)
+        return np.concatenate([lower, upper], axis=1)
+
     array = np.asarray(boxes, dtype=np.float32)
     if array.size == 0:
         return EMPTY.copy()
