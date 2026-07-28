@@ -135,7 +135,7 @@ def plan(
     param: str,
     array: Any,
     axes: str | Sequence[str | None],
-    position: dict[str, int] | None = None,
+    position: dict[str | int, int] | None = None,
     mapping: Sequence[int | None] | None = None,
     dispositions: dict[int, str] | None = None,
 ) -> AdaptationPlan:
@@ -154,9 +154,12 @@ def plan(
         axes: What that array actually is, e.g. ``list("zyx")``. A front end
             has to work this out for itself; skop does not guess. ``None`` in
             place of a label means that axis has no name.
-        position: Current position along each named axis, for any axis being
-            indexed down to a single plane. A viewer's slider positions.
-            Axes absent from it are indexed at 0.
+        position: Current position along each axis, for any axis being indexed
+            down to a single plane. A viewer's slider positions. Keyed by axis
+            name or by axis index -- an index is the only way to say where an
+            *unnamed* axis sits, and a front end that has not worked out names
+            still knows where its sliders are. Axes absent from it are indexed
+            at 0.
         mapping: One input-axis index (or None) per declared slot, overriding
             the best-effort assignment.
         dispositions: What to do with each leftover input axis, by index: one
@@ -181,7 +184,7 @@ def build(
     param: _spec.ParamSpec,
     axes: str | Sequence[str | None],
     shape: Sequence[int],
-    position: dict[str, int] | None = None,
+    position: dict[str | int, int] | None = None,
     mapping: Sequence[int | None] | None = None,
     dispositions: dict[int, str] | None = None,
 ) -> AdaptationPlan:
@@ -205,8 +208,12 @@ def build(
     chosen = _dispositions(leftover, dispositions, declared, param)
 
     at = position or {}
+    # By index first: an index names exactly one axis, where a name may name
+    # none of them (an unnamed axis) or, before _check_actual, several.
     select = tuple(
-        (i, int(at.get(actual[i], 0))) for i in leftover if chosen[i] == SELECT
+        (i, int(at[i] if i in at else at.get(actual[i], 0)))
+        for i in leftover
+        if chosen[i] == SELECT
     )
     iterate = tuple(i for i in leftover if chosen[i] == ITERATE)
     passed = tuple(i for i in leftover if chosen[i] == PASS)

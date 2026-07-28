@@ -268,6 +268,32 @@ def test_a_leftover_axis_can_be_selected_instead():
     assert "z=3" in plan.summary
 
 
+def test_a_position_may_be_keyed_by_axis_index():
+    # The only way to place an *unnamed* axis -- and what a front end that has
+    # not worked out any names still knows about its own sliders.
+    plan = plan_for(
+        toy.quadrants,
+        "image",
+        np.zeros((5, 4, 6)),
+        [None, "y", "x"],
+        position={0: 3},
+        dispositions={0: skop.SELECT},
+    )
+    assert plan.select == ((0, 3),)
+
+
+def test_an_index_key_outranks_a_name_key():
+    plan = plan_for(
+        toy.quadrants,
+        "image",
+        np.zeros((5, 4, 6)),
+        list("zyx"),
+        position={"z": 1, 0: 3},
+        dispositions={0: skop.SELECT},
+    )
+    assert plan.select == ((0, 3),)
+
+
 def test_a_variadic_op_is_handed_its_leftovers_whole():
     from skop.ops import threshold
 

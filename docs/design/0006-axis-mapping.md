@@ -152,6 +152,9 @@ protection no longer needs enforcing — it cannot be reached by accident.
 
 `AdaptationPlan` keys `select` and `iterate` by **input-axis index** rather than
 name, since an axis may be unnamed, and adds `mapping`, `passed` and `warnings`.
+`position` accepts an index key for the same reason: a front end whose axes are
+mostly unnamed still knows where its sliders are, and name keys would collapse
+every unnamed axis onto one entry.
 
 ### Splitting `stardist2d`
 
