@@ -17,11 +17,22 @@ python = "==3.10"
 numpy = "<2"
 scipy = "*"
 pip = "*"
-appose = ">=0.11"
+# NB: appose is not listed as a conda dependency here, unlike in
+# envs/unseg-cv. The pinned scikit-ops below depends on it, and pixi cannot
+# satisfy a PyPI dependency on appose with the conda package -- so stating
+# it both ways makes the solve fail outright. This reverts to an ordinary
+# conda dependency once appose 0.12 is released and scikit-ops stops
+# sourcing it from git.
 # NB: stardist 0.9.1 imports pkg_resources, which setuptools dropped in 81.
 setuptools = "<81"
 
 [pypi-dependencies]
+# Note: pinned deliberately -- this is part of the environment's identity,
+# so bumping it rebuilds every environment. A checkout still shadows it,
+# because skop.host.INIT puts src at sys.path[0]. See
+# docs/spec/fiji-front-end.md; it becomes an ordinary version constraint
+# once scikit-ops is released.
+scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "dc46a814ffbc4287d0496d5213d7e1661652ed9b" }
 stardist = "==0.9.1"
 csbdeep = "*"
 

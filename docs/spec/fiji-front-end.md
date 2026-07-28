@@ -1,9 +1,12 @@
 # Spec — a Fiji front end
 
-**Status:** proposed, nothing built. The plan for `skop-fiji`, the second front
-end, written against what [front-ends.md](front-ends.md) says the boundary is
-and what [skop-napari](https://github.com/apposed/skop-napari) learned building
-the first one.
+**Status:** P0 and P1 built; P2 onward still proposed. The plan for
+`skop-fiji`, the second front end, written against what
+[front-ends.md](front-ends.md) says the boundary is and what
+[skop-napari](https://github.com/apposed/skop-napari) learned building the
+first one. The P0 half lives here — `skop.host`, and `to_dict`/`from_dict` on
+`OpSpec`; the Java half lives in
+[skop-fiji](https://github.com/apposed/skop-fiji).
 
 Working name `skop-fiji`; Maven coordinate `org.apposed:skop-fiji`; package
 `org.apposed.skop.fiji`; distributed as a Fiji update site.
@@ -115,6 +118,24 @@ Two consequences worth knowing before the first pin lands:
   all nine environments. Bump deliberately, not per commit.
 - Once scikit-ops is released, this becomes an ordinary version constraint and
   the git URL disappears. The pin is a stand-in for a release, not a design.
+
+And one the first pin actually cost, which the plan above did not foresee.
+**Appose had to stop being a conda dependency in every environment that gains
+the pin.** Pixi maps its conda packages into the PyPI solve and holds them at
+the version it resolved; the pinned scikit-ops requires appose too, and
+scikit-ops' `[tool.uv.sources]` sources appose from git — which uv honors
+transitively — so the solve is asked for an appose that is simultaneously
+exactly `0.11.0` and a git checkout, and fails outright. Stating appose only
+once, and letting scikit-ops bring it, is what resolves it.
+
+Two things follow. The worker's appose now matches the host's, which is more
+correct than the split it replaces. And the environments are that much less
+reproducible, since a branch is not a pin — so this reverts to an ordinary
+conda dependency the moment appose 0.12 is released and scikit-ops stops
+sourcing it from git. `envs/unseg-cv` is exempt from all of it: scikit-ops
+needs Python 3.10 and UNSEG's environment pins 3.9, so that one keeps its
+conda appose and runs off the `sys.path` injection alone, exactly as it did
+before.
 
 ## OpSpec → SciJava module
 
@@ -242,8 +263,8 @@ wire/                the OpSpec JSON reading
 
 | | |
 | --- | --- |
-| **P0** | In scikit-ops: `OpSpec` JSON, `describe` and `plan` tasks, the pinned git dependency in each `pixi.toml` |
-| **P1** | `SkopRunner` plus a headless test running `toy:add` and `threshold:otsu` on a `ShmImg` from Java. No UI. This proves the whole boundary, and is where the axis-order bug surfaces |
+| **P0** | ✅ In scikit-ops: `OpSpec` JSON, `describe` and `plan` tasks, the pinned git dependency in each `pixi.toml` |
+| **P1** | ✅ `SkopRunner` plus a headless test running `toy:add` and `threshold:otsu` on a `ShmImg` from Java. No UI. This proves the whole boundary, and is where the axis-order bug surfaces |
 | **P2** | Dynamic module registration, image in and image out, progress, cancel, errors. The first shippable thing |
 | **P3** | The rest of the roles: `ImgLabeling`, ROIs, tables, masks into the ROI Manager |
 | **P4** | Axis-mapping UI, environment manager, update site, macro-recording polish |
@@ -261,8 +282,11 @@ wire/                the OpSpec JSON reading
 
 ## Still open
 
-- Whether `_INIT` and `_CALL` are delivered to Java as data or transcribed.
-  Data, if it can be made to read well.
+- ~~Whether `_INIT` and `_CALL` are delivered to Java as data or
+  transcribed.~~ Settled: data. They live in `skop.host` and are fetched by
+  `skop.host:constants()`, which `SkopRunner` calls once. The one thing Java
+  still transcribes is a three-line bootstrap, because reading data out of
+  skop needs a service and starting a service needs a script.
 - What an op with a `MasksData` output offers by default: the ROI Manager, a
   projection, or a choice.
 - Whether the ImageJ1 side needs anything beyond imagej-legacy's

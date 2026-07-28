@@ -20,4 +20,8 @@ scikit-learn = "==1.2.2"
 appose = ">=0.11"
 
 [pypi-dependencies]
+# NB: the one environment with no pinned scikit-ops. Every other one installs
+# it, so that a worker needs no checkout; this one cannot, because scikit-ops
+# requires Python 3.10 and UNSEG's pins 3.9. It runs off the sys.path
+# injection alone, which is what got it working in the first place.
 opencv-python-headless = "==4.7.0.72"
