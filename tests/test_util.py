@@ -53,3 +53,56 @@ def test_to_rgb_rejects_a_volume():
 def test_to_gray_and_to_rgb_round_trip_shape():
     image = np.zeros((8, 8), dtype=np.uint8)
     assert to_gray(to_rgb(image)).shape == (8, 8)
+
+
+def offset_psf(z: int = 24, peak_z: int = 15) -> np.ndarray:
+    """A crude PSF whose brightest plane is deliberately not the middle one."""
+    psf = np.zeros((z, 8, 8), dtype=np.float32)
+    for plane in range(z):
+        psf[plane, 4, 4] = np.exp(-((plane - peak_z) ** 2) / 8.0)
+    return psf
+
+
+def test_recenter_puts_the_peak_on_the_centre_plane():
+    from skop.ops.kernels import recenter_psf_axial
+
+    result = recenter_psf_axial(offset_psf(), 8)
+    assert result.shape == (8, 8, 8)
+    assert np.unravel_index(result.argmax(), result.shape)[0] == 4
+
+
+def test_recenter_refuses_a_crop_that_runs_off_the_end():
+    # The original sliced without checking, and Python obliged: a negative
+    # start counts from the far end, an overlong stop truncates, and either
+    # way a differently-shaped PSF came back with no complaint.
+    from skop.ops.kernels import recenter_psf_axial
+
+    with pytest.raises(ValueError, match="too close to the edge"):
+        recenter_psf_axial(offset_psf(z=24, peak_z=1), 16)
+
+
+def test_recenter_refuses_to_grow_a_psf():
+    from skop.ops.kernels import recenter_psf_axial
+
+    with pytest.raises(ValueError, match="nothing to crop"):
+        recenter_psf_axial(offset_psf(z=8), 16)
+
+
+def test_recenter_wants_a_volume():
+    from skop.ops.kernels import recenter_psf_axial
+
+    with pytest.raises(ValueError, match="3-D"):
+        recenter_psf_axial(np.zeros((8, 8), dtype=np.float32), 4)
+
+
+def test_a_fluorophore_is_its_own_wavelength():
+    # The float mixin is what lets `wavelength=Fluorophore.DAPI` be passed to
+    # a parameter annotated as a plain float, so the enum can be a convenience
+    # without becoming the only way to say it.
+    from skop.ops.kernels import Fluorophore
+
+    assert float(Fluorophore.DAPI) == 0.461
+    assert Fluorophore.Cy5 > Fluorophore.FITC
+    # Microns, not nanometres -- every PSF op here works in microns, and a
+    # wavelength off by 1000x produces a PSF that looks plausible and is wrong.
+    assert all(0.2 < float(f) < 1.0 for f in Fluorophore)

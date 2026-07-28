@@ -431,3 +431,201 @@ def test_both_detectors_agree_there_are_objects(runner):
         centers = (result.boxes[:, :2] + result.boxes[:, 2:]) / 2
         assert np.all(centers[:, 0] < image.shape[0])
         assert np.all(centers[:, 1] < image.shape[1])
+
+
+@pytest.mark.env("skimage")
+def test_paraxial_otf_is_a_diffraction_limited_passband(runner):
+    from skop.ops.kernels import paraxial_otf
+
+    otf = runner.run(paraxial_otf, size=128, wavelength=0.53, pixel_size=0.1)
+
+    assert otf.shape == (128, 128)
+    # An OTF passes DC untouched and attenuates everything else, so its
+    # maximum is 1 and sits at the centre.
+    assert otf.max() == pytest.approx(1.0)
+    # Past the cutoff it is exactly zero, not merely small: that hard edge is
+    # what makes it diffraction-limited rather than just low-pass. The corners
+    # are the farthest points from the centre, so they are always outside.
+    assert otf[0, 0] == 0.0
+    assert otf[-1, -1] == 0.0
+    assert np.all(otf >= 0.0)
+
+
+@pytest.mark.env("skimage")
+def test_a_wider_aperture_passes_more_frequencies(runner):
+    # The physics the op exists to express: resolution goes as wavelength over
+    # NA, so opening the aperture widens the passband. If the two got divided
+    # the wrong way round this is what would catch it.
+    from skop.ops.kernels import paraxial_otf
+
+    narrow = runner.run(paraxial_otf, size=128, numerical_aperture=0.5)
+    wide = runner.run(paraxial_otf, size=128, numerical_aperture=1.4)
+
+    assert (wide > 0).sum() > (narrow > 0).sum()
+
+
+@pytest.mark.env("skimage")
+def test_paraxial_psf_is_centred_symmetric_and_normalized(runner):
+    from skop.ops.kernels import paraxial_psf
+
+    psf = runner.run(paraxial_psf, size=128, wavelength=0.53, pixel_size=0.1)
+
+    assert psf.shape == (128, 128)
+    assert psf.dtype == np.float32
+    assert psf.sum() == pytest.approx(1.0)
+
+    # The peak sits on the fftshift centre, which is what a deconvolution op
+    # assumes about a kernel -- a PSF centred anywhere else shifts the result.
+    peak = np.unravel_index(psf.argmax(), psf.shape)
+    assert peak == (64, 64)
+
+    # Exactly symmetric, not approximately: the OTF is real and even, so its
+    # transform is too, and any asymmetry here would mean an indexing slip.
+    # Symmetry is i <-> size - i, so index 0 has no partner and is excluded.
+    assert np.array_equal(psf, psf.T)
+    assert np.array_equal(psf[64, 65:], psf[64, 63::-1][:63])
+
+
+@pytest.mark.env("skimage")
+def test_a_paraxial_psf_has_negative_side_lobes(runner):
+    """The property that stops this being a drop-in Richardson-Lucy kernel.
+
+    An ideal paraxial PSF is the Airy intensity pattern, which is
+    non-negative everywhere. This one is not: sampling the OTF on a grid and
+    inverting it with a DFT leaves ringing of about 1e-4 of the peak, some of
+    it below zero.
+
+    That is small enough to ignore for simulation -- blur an image with it and
+    nothing looks wrong -- and fatal for deconvolution. Richardson-Lucy is a
+    Poisson maximum-likelihood iteration built on ratios of the forward
+    projection, so a kernel with negative entries does not converge slowly, it
+    diverges: feeding this straight to ``richardson_lucy`` reaches 1e53 in
+    fifty iterations.
+
+    Recorded as a test rather than fixed in the op, because clipping would
+    silently change every number the original tnia-python function produced.
+    A caller that wants to deconvolve with this should clip and renormalize,
+    which is what the assertion below shows costs essentially nothing.
+    """
+    from skop.ops.kernels import paraxial_psf
+
+    psf = runner.run(paraxial_psf, size=128, wavelength=0.53, pixel_size=0.1)
+
+    # No single negative value is large -- each is around 1e-4 of the peak,
+    # which is why this is a trap rather than an obvious bug.
+    assert psf.min() < 0.0
+    assert abs(psf.min()) < 1e-3 * psf.max()
+
+    # In aggregate they are not negligible: about 1% of the PSF's mass sits
+    # below zero. That is the number that says the op must not quietly clip,
+    # since doing so would move every result by more than a rounding error.
+    negative_mass = float(psf[psf < 0].sum())
+    assert -0.02 < negative_mass < -0.005
+
+    clipped = np.clip(psf, 0.0, None)
+    clipped /= clipped.sum()
+    assert clipped.sum() == pytest.approx(1.0)
+    assert abs(clipped.max() - psf.max()) / psf.max() < 0.02
+
+
+@pytest.mark.env("skimage")
+def test_a_clipped_paraxial_psf_can_be_deconvolved_with(runner):
+    # With the negative lobes removed it behaves like any other kernel, which
+    # is what makes the diagnosis above the whole story rather than a guess.
+    from skop.ops.deconvolve import richardson_lucy
+    from skop.ops.kernels import paraxial_psf
+
+    truth = points_2d(64)
+    psf = runner.run(paraxial_psf, size=64, numerical_aperture=0.8, pixel_size=0.1)
+    psf = np.clip(psf, 0.0, None)
+    psf /= psf.sum()
+
+    blurred = blur(truth, psf)
+    restored = runner.run(richardson_lucy, image=blurred, psf=psf, num_iters=50)
+    assert rmse(restored, truth) < rmse(blurred, truth)
+
+
+@pytest.mark.env("sdeconv")
+def test_gibson_lanni_is_a_normalized_centred_volume(runner):
+    # Small on purpose: this is a CPU torch computation and the shape and the
+    # normalization do not need a big one.
+    from skop.ops.kernels import gibson_lanni
+
+    psf = runner.run(gibson_lanni, xy_size=64, z_size=32)
+
+    assert psf.shape == (32, 64, 64)
+    assert psf.dtype == np.float32
+    assert psf.sum() == pytest.approx(1.0, rel=1e-5)
+    assert np.all(psf >= 0.0)
+
+    # In focus and on axis, so the peak belongs on the centre plane. That is
+    # what recenter=True buys, and this is the assertion that says so.
+    peak_z, peak_y, peak_x = np.unravel_index(psf.argmax(), psf.shape)
+    assert peak_z == 32 // 2
+    # Laterally the peak sits at (size - 1) // 2, not size // 2: sdeconv builds
+    # its grid so that an even-sized PSF centres on the lower of the two middle
+    # pixels. Worth pinning, since it is the kind of half-pixel convention that
+    # shows up later as a deconvolution result drifting by one pixel.
+    assert (peak_y, peak_x) == (31, 31)
+
+
+@pytest.mark.env("sdeconv")
+def test_a_confocal_psf_is_tighter_than_a_widefield_one(runner):
+    # confocal_factor squares the PSF, which is the whole physical claim being
+    # made: detecting through the illumination aperture narrows it.
+    from skop.ops.kernels import gibson_lanni
+
+    widefield = runner.run(gibson_lanni, xy_size=64, z_size=32, confocal_factor=1.0)
+    confocal = runner.run(gibson_lanni, xy_size=64, z_size=32, confocal_factor=2.0)
+
+    def above_half(psf: np.ndarray) -> int:
+        return int((psf > psf.max() / 2).sum())
+
+    assert above_half(confocal) < above_half(widefield)
+
+
+@pytest.mark.env("sdeconv")
+def test_depth_below_the_coverslip_makes_the_psf_axially_asymmetric(runner):
+    # Spherical aberration is the reason to reach for Gibson-Lanni over the
+    # paraxial model, and a non-zero pz is how you ask for it. At pz=0 the two
+    # halves of the axial profile match; deep in the sample they must not.
+    from skop.ops.kernels import gibson_lanni
+
+    def axial_asymmetry(pz: float) -> float:
+        psf = runner.run(gibson_lanni, xy_size=64, z_size=32, pz=pz, ns=1.33)
+        profile = psf.sum(axis=(1, 2))
+        return float(np.abs(profile - profile[::-1]).max() / profile.max())
+
+    assert axial_asymmetry(0.0) < axial_asymmetry(2.0)
+
+
+@pytest.mark.env("sdeconv")
+def test_recentring_survives_a_point_deep_in_the_sample(runner):
+    """The headroom is computed from pz, and this is why.
+
+    sdeconv's PSF peak marches toward plane zero as the point goes deeper, so
+    a fixed crop window -- which is what the original used, and what design
+    0010 originally specified -- runs off the front of the volume somewhere
+    around one micron. These depths are all ordinary; none of them should be
+    an error, and every one of them should come back centred.
+    """
+    from skop.ops.kernels import gibson_lanni
+
+    for pz in (0.0, 1.0, 4.0, 8.0):
+        psf = runner.run(gibson_lanni, xy_size=32, z_size=32, pz=pz)
+        assert psf.shape == (32, 32, 32)
+        assert psf.sum() == pytest.approx(1.0, rel=1e-5)
+        assert int(np.unravel_index(psf.argmax(), psf.shape)[0]) == 16, (
+            f"pz={pz} came back off-centre"
+        )
+
+
+@pytest.mark.env("sdeconv")
+def test_a_fluorophore_can_stand_in_for_a_wavelength(runner):
+    # The enum is a float, so it crosses into the worker as one -- there is no
+    # codec for an enum, and this is the test that would fail if that changed.
+    from skop.ops.kernels import Fluorophore, gibson_lanni
+
+    psf = runner.run(gibson_lanni, xy_size=32, z_size=16, wavelength=Fluorophore.DAPI)
+    assert psf.shape == (16, 32, 32)
+    assert psf.sum() == pytest.approx(1.0, rel=1e-5)

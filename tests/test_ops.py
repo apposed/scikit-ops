@@ -124,3 +124,27 @@ def test_detected_boxes_are_shapes():
 def test_gaussian_psf_needs_no_environment_of_its_own():
     # A PSF is just numpy, so it shares the environment already there.
     assert BY_NAME["skop.ops.kernels.psf:gaussian_psf"].env == "skimage"
+
+
+def test_only_the_psf_model_that_needs_torch_pays_for_it():
+    # The kernels namespace spans two environments on purpose: sdeconv drags
+    # in torch, and the models that do not need it must not be made to wait
+    # on a multi-gigabyte install.
+    assert BY_NAME["skop.ops.kernels.gibson_lanni:gibson_lanni"].env == "sdeconv"
+    assert BY_NAME["skop.ops.kernels.paraxial:paraxial_psf"].env == "skimage"
+    assert BY_NAME["skop.ops.kernels.paraxial:paraxial_otf"].env == "skimage"
+
+
+def test_psf_models_agree_on_what_the_optics_are_called():
+    # Not a shared signature -- the models genuinely know different amounts
+    # about the microscope -- but where they do ask the same question they
+    # have to spell it the same way, or a front end cannot carry a value from
+    # one to the other and a caller has to look it up every time.
+    shared = ("wavelength", "numerical_aperture")
+    for name in (
+        "skop.ops.kernels.paraxial:paraxial_psf",
+        "skop.ops.kernels.paraxial:paraxial_otf",
+        "skop.ops.kernels.gibson_lanni:gibson_lanni",
+    ):
+        names = {p.name for p in BY_NAME[name].params}
+        assert set(shared) <= names, f"{name} is missing {set(shared) - names}"

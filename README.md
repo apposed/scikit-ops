@@ -32,6 +32,9 @@ sharing an environment also share a warm worker process, unless one asks for
 | --- | --- | --- |
 | `skop.ops.threshold:otsu` | `skimage` | Otsu thresholding |
 | `skop.ops.kernels.psf:gaussian_psf` | `skimage` | Gaussian PSF, 2D or 3D |
+| `skop.ops.kernels.paraxial:paraxial_psf` | `skimage` | Paraxial PSF, from wavelength and NA |
+| `skop.ops.kernels.paraxial:paraxial_otf` | `skimage` | Paraxial OTF, the transform of the above |
+| `skop.ops.kernels.gibson_lanni:gibson_lanni` | `sdeconv` | Gibson-Lanni 3D PSF, with spherical aberration |
 | `skop.ops.deconvolve.richardson_lucy:richardson_lucy` | `skimage` | Richardson-Lucy, on the CPU |
 | `skop.ops.deconvolve.richardson_lucy_cupy:richardson_lucy_cupy` | `cupy` | Richardson-Lucy, on an NVIDIA GPU |
 | `skop.ops.segment.cellpose:cellpose` | `cellpose` | Cellpose segmentation |
