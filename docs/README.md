@@ -29,6 +29,9 @@ load-bearing.
 | [0004](design/0004-build-feedback.md) | Reporting an environment build to whoever is running the op |
 | [0005](design/0005-dimensional-adaptation.md) | Fitting an n-D array to an m-D op (superseded in part by 0006) |
 | [0006](design/0006-axis-mapping.md) | Ops declare arity and hints; the axis mapping belongs to the user |
+| [0007](design/0007-box-detector-ops.md) | Box detectors as a substitutable kind, and the first two |
+| [0008](design/0008-mask-detector-ops.md) | Boxes in, one mask per box out, and why masks are not a label image |
+| [0010](design/0010-theoretical-psf-ops.md) | Gibson-Lanni and the paraxial models, and what the license allows |
 
 ## Spec
 
@@ -36,3 +39,6 @@ load-bearing.
 | --- | --- |
 | [form-adaptation.md](spec/form-adaptation.md) | Calling a computer op as a function, and back |
 | [front-ends.md](spec/front-ends.md) | What a second front end (Fiji) needs from here |
+| [fiji-front-end.md](spec/fiji-front-end.md) | What that front end looks like: one command per op, Java as the host |
+| [workflow-ops.md](spec/workflow-ops.md) | Ops built out of other ops, and what two real workflows need |
+| [per-object-features.md](spec/per-object-features.md) | How a value per detected object should travel |

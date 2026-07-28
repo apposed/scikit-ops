@@ -6,7 +6,7 @@ trained on photographs and is unremarkable on a field of nuclei, where
 ``vit_b_lm`` was trained on light microscopy and is not.
 
 This op prompts it with boxes -- stage two of the detect-then-segment workflow
-in docs/design/0005-workflow-ops.md, fed by an op from ``skop.ops.detect``.
+in docs/spec/workflow-ops.md, fed by an op from ``skop.ops.detect``.
 
 Ported rather than wrapped, unlike its MobileSAM sibling: micro_sam is a
 normal conda package, and the code between it and here is a loop. The original
@@ -88,7 +88,7 @@ def microsam_masks(
     predictor = get_sam_model(model_type=model.value)
 
     # The expensive half, and it depends only on the image -- which is why
-    # this op takes every box at once rather than one per call (0005).
+    # this op takes every box at once rather than one per call (workflow-ops).
     progress("Computing image embeddings")
     embeddings = precompute_image_embeddings(predictor, image, ndim=2, verbose=False)
 

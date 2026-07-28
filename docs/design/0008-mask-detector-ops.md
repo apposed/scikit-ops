@@ -3,8 +3,8 @@
 **Status:** implemented. `skop.ops.mask` holds both detectors, `skop.masks`
 holds the projections, and `Role.masks` is in the vocabulary (which amended
 [0003](0003-semantic-roles.md)). What is *not* settled is how the per-mask
-scalars travel; that is [0009](0009-per-object-features.md), deliberately kept
-separate.
+scalars travel; that is [per-object features](../spec/per-object-features.md),
+deliberately kept separate.
 
 ## The kind
 
@@ -16,8 +16,9 @@ box:
 def some_mask_detector(image: ImageData, boxes: BoxesData, ...) -> Masks
 ```
 
-This is stage two of the segmenter in [0005](0005-workflow-ops.md), fed by a
-box detector ([0007](0007-box-detector-ops.md)). Because the two stages live in
+This is stage two of the segmenter in
+[workflow-ops](../spec/workflow-ops.md), fed by a box detector
+([0007](0007-box-detector-ops.md)). Because the two stages live in
 different environments, what joins them is a workflow op.
 
 It is a different kind from the instance segmenters in `ops/segment` — Cellpose
@@ -92,9 +93,9 @@ Use that. No singleton, no `reset_state()`, nothing private.
 
 **Embeddings are the expensive part**, and they depend only on the image. One
 op call per image, looping over boxes inside, pays that cost once and avoids a
-round trip per box (0005, "round trips cost"). `precompute_image_embeddings`
-takes `pbar_init`/`pbar_update` callbacks, which is where `skop.progress` hooks
-in.
+round trip per box (workflow-ops, "round trips cost").
+`precompute_image_embeddings` takes `pbar_init`/`pbar_update` callbacks,
+which is where `skop.progress` hooks in.
 
 ### Boxes need no conversion for micro_sam
 
@@ -140,9 +141,9 @@ stage is gone.
 and `stability_score` are MobileSAM's and have no micro_sam counterpart
 (`segment_from_box(..., return_all=True)` gives a score, but not the same one),
 so they cannot go in a shared return type until
-[0009](0009-per-object-features.md) says how per-object values travel. Same
-reasoning that dropped `scores` from `Boxes`, and this is the second real case
-0009 was waiting on.
+[per-object features](../spec/per-object-features.md) says how per-object
+values travel. Same reasoning that dropped `scores` from `Boxes`, and this is
+the second real case that document was waiting on.
 
 **The cost worth naming:** `(400, 1024, 1024)` uint8 is 400 MB. `StackedLabels`
 had the same appetite and nobody minded, so this is not a regression — but RLE
@@ -277,12 +278,14 @@ not before.
   `read_yolo_txt` — `skop.boxes` plus one slice assignment.
 - `add_properties_to_label_image`, `filter_labels_3d_multi`,
   `filter_labels_hue_inverse` — these are per-object features and filtering by
-  them. They belong to [0009](0009-per-object-features.md), and they are the
-  best evidence in the old code for how much that decision is holding up.
+  them. They belong to [per-object features](../spec/per-object-features.md),
+  and they are the best evidence in the old code for how much that decision is
+  holding up.
 - `stacked_label_dataset.py` — a torch `Dataset` that jitters prompt boxes for
-  SAM finetuning. That is [0011](0011-deep-learning-training-ops.md), not this.
+  SAM finetuning. That is deep-learning training ops — a document not yet
+  written — not this.
 - `add_background_results` — also finetuning: empty masks to suppress false
-  positives. 0011.
+  positives. Same document.
 
 ## Errors to fix on the way through
 

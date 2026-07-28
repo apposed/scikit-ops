@@ -16,7 +16,7 @@ confidence per box is not a layer -- it is a *feature* of one, and skop has no
 way to say that yet. Returning it as a bare array made a front end guess, and
 napari guessed "image", which a 1-D array cannot be. Rather than encode a
 guess, the value is dropped until the question is answered. See
-docs/design/0009-per-object-features.md.
+docs/spec/per-object-features.md.
 """
 
 from __future__ import annotations

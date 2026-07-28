@@ -113,7 +113,7 @@ def mobilesam_masks(
     predictor = SamPredictor(model)
 
     # The expensive half, and it depends only on the image -- which is why
-    # this op takes every box at once rather than one per call (0005).
+    # this op takes every box at once rather than one per call (workflow-ops).
     progress("Encoding the image")
     predictor.set_image(to_rgb(image))
 
@@ -152,7 +152,8 @@ def mobilesam_masks(
                 simple_type=True,
             )
             # _predicted_iou is a confidence per mask, dropped for the same
-            # reason Boxes drops its scores -- see _result.py and 0009. The
+            # reason Boxes drops its scores -- see _result.py and the
+            # per-object-features spec. The
             # original also computed a stability score here, which cost a
             # second thresholding pass for a value nothing consumed.
             full = predictor.model.postprocess_masks(

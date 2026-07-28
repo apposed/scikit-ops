@@ -57,10 +57,10 @@ recording rather than discovering.
 
 A mask detector returns `(N, Y, X)` binary masks that are allowed to overlap.
 That is not a label image — one pixel cannot hold two integers — and it is not
-any other layer either. But unlike the per-object features of
-[0009](0009-per-object-features.md), which have no display at all, it maps onto
-one *deterministically*: a front end projects it with `skop.masks` and gets a
-Labels layer. The role still answers "which layer does this become". It just
+any other layer either. But unlike the
+[per-object features](../spec/per-object-features.md), which have no display
+at all, it maps onto one *deterministically*: a front end projects it with
+`skop.masks` and gets a Labels layer. The role still answers "which layer does this become". It just
 answers with a conversion instead of an identity, and leaves the choice of
 conversion to the front end, where it is cheap to change.
 
