@@ -19,28 +19,15 @@ import appose
 import numpy as np
 
 from . import _adapt, _codec, _progress, _spec
+from .host import CALL as _CALL
+from .host import INIT as _INIT
 
 if TYPE_CHECKING:
     from typing import Self
 
-# The script sent for every op call. Its last statement is an expression
-# yielding a dict, which Appose turns into the task's outputs.
-_CALL = "skop_invoke(task, module, function, kwargs, plans)"
-
-# Installed into every worker via the service init script. Names defined here
-# become worker exports, and so are in scope for every task.
-#
-# NB: The search path is extended here rather than via PYTHONPATH. Appose
-# gained per-service env vars in 0.12; setting them on the builder instead
-# would fold a machine-specific path into the environment's identity, causing
-# a rebuild whenever the checkout moves.
-_INIT = """
-import sys
-sys.path.insert(0, {root!r})
-import numpy  # NB: must precede the worker's I/O loop on Windows.
-import skop.worker
-skop_invoke = skop.worker.invoke
-"""
+# Note: _CALL and _INIT live in skop.host rather than here, because an
+# out-of-process host needs them too and there must be exactly one copy of
+# them. See docs/spec/fiji-front-end.md.
 
 
 @dataclass(frozen=True)
