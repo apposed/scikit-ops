@@ -1,6 +1,7 @@
 # Spec — a Fiji front end
 
-**Status:** P0, P1 and P2 built; P3 onward still proposed. The plan for
+**Status:** P0 through P3 built, and P4's axis-mapping UI with them; the
+environment manager and the update site are what is left. The plan for
 `skop-fiji`, the second front end, written against what
 [front-ends.md](front-ends.md) says the boundary is and what
 [skop-napari](https://github.com/apposed/skop-napari) learned building the
@@ -215,15 +216,21 @@ before any UI exists.
 The mapping UI itself (a combo per slot, and iterate / current position / pass
 per leftover axis, per skop-napari design 0007) does not fit a statically
 harvested dialog, since the items depend on the shape of an image the user has
-not chosen yet. Use `DynamicCommand` with a callback on the image parameter
-that adds the mapping items once a `Dataset` is selected. If that proves
-unworkable, fall back to accepting skop's default plan and surfacing its
-warnings, which never discards data — but that is the fallback, not the plan.
+not chosen yet.
 
-P2 ships the fallback, and it is worth more than it sounds: a strictly 2-D op
-handed a stack is iterated over it with nothing asked of anyone, because an
-`ImgPlus` already said what its axes were. The UI is what turns a default into
-a choice, and that is still P4.
+The suggestion here was a callback on the image parameter that adds the items
+once a `Dataset` is selected, and it does not work: `DefaultWidgetModel` fires
+a callback from a panel the input harvester has already built, so an item
+added by one gets no widget. **A preprocessor does work.** At
+`InputHarvester.PRIORITY + 1`, imagej-common's `ActiveImagePreprocessor` has
+already filled a single image parameter from the active display, so the axes
+are known before the panel exists: ask skop for the default plan, lay it out
+as items, and the harvester draws one dialog containing all of it.
+
+Two consequences. The items are per-run, so `createModule` hands each module
+an `OpModuleInfo` of its own — the same move `DynamicCommand` makes, for the
+same reason. And with no image to inspect, no items are added and the op falls
+back to skop's default plan, which is what P2 and P3 did all along.
 
 ## Threading, progress, cancellation, errors
 
@@ -273,8 +280,8 @@ wire/                the OpSpec JSON reading
 | **P0** | ✅ In scikit-ops: `OpSpec` JSON, `describe` and `plan` tasks, the pinned git dependency in each `pixi.toml` |
 | **P1** | ✅ `SkopRunner` plus a headless test running `toy:add` and `threshold:otsu` on a `ShmImg` from Java. No UI. This proves the whole boundary, and is where the axis-order bug surfaces |
 | **P2** | ✅ Dynamic module registration, image in and image out, progress, cancel, errors. The first shippable thing |
-| **P3** | The rest of the roles: `ImgLabeling`, ROIs, tables, masks into the ROI Manager |
-| **P4** | Axis-mapping UI, environment manager, update site, macro-recording polish |
+| **P3** | ✅ The rest of the roles: `ImgLabeling`, ROIs, tables, masks into the ROI Manager |
+| **P4** | Axis-mapping UI ✅; environment manager, update site, macro-recording polish still to do |
 
 ## Decided, and not to be relitigated without new evidence
 
@@ -294,8 +301,12 @@ wire/                the OpSpec JSON reading
   `skop.host:constants()`, which `SkopRunner` calls once. The one thing Java
   still transcribes is a three-line bootstrap, because reading data out of
   skop needs a service and starting a service needs a script.
-- What an op with a `MasksData` output offers by default: the ROI Manager, a
-  projection, or a choice.
+- ~~What an op with a `MasksData` output offers by default: the ROI Manager, a
+  projection, or a choice.~~ Settled: ROIs, one per mask, in a `ROITree`.
+  imagej-legacy is what carries that to the ROI Manager, so nothing in
+  skop-fiji has to know ImageJ1 exists — and overlapping masks stay
+  overlapping, which was the whole argument for the role reaching Fiji as
+  ROIs. A projection is then one of several things a user may ask for.
 - Whether the ImageJ1 side needs anything beyond imagej-legacy's
   `ImagePlus`/`Dataset` conversion. Probably not, but no one has tried it with
   a shared-memory-backed `ShmImg` underneath.
