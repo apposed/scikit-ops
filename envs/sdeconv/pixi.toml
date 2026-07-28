@@ -43,11 +43,12 @@ cuda = "12.0"
 python = "3.11.*"
 numpy = "*"
 # NB: appose is not listed as a conda dependency here, unlike in
-# envs/unseg-cv. The pinned scikit-ops below depends on it, and pixi cannot
-# satisfy a PyPI dependency on appose with the conda package -- so stating
-# it both ways makes the solve fail outright. This reverts to an ordinary
-# conda dependency once appose 0.12 is released and scikit-ops stops
-# sourcing it from git.
+# envs/unseg-cv, and this is temporary. A conda appose does satisfy the
+# pinned scikit-ops' PyPI dependency on it -- but only once the pin is new
+# enough to have dropped scikit-ops' [tool.uv.sources] git source for
+# appose, which uv honors transitively and which makes the solve
+# unsatisfiable. So this goes back to `appose = ">=0.12"` above as soon as
+# the rev below is bumped past that change and conda-forge carries 0.12.
 
 # sdeconv's own declared dependencies, satisfied from conda rather than left
 # to PyPI. This is the same lesson envs/segment-everything records: left to

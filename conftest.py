@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from appose.util.filepath import appose_envs_dir
+from appose.util.environment import appose_envs_dir
 
 src = str(Path(__file__).resolve().parent / "src")
 if src not in sys.path:

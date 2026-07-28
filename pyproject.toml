@@ -32,7 +32,7 @@ classifiers = [
 
 requires-python = ">=3.10"
 dependencies = [
-    "appose>=0.11",
+    "appose>=0.12",
     "numpy",
 ]
 
@@ -52,12 +52,6 @@ documentation = "https://github.com/apposed/scikit-ops/blob/main/README.md"
 source = "https://github.com/apposed/scikit-ops"
 download = "https://pypi.org/project/scikit-ops"
 tracker = "https://github.com/apposed/appose/issues"
-
-[tool.uv.sources]
-# Note: the main tip, not the 0.11 release, for PixiInstallMonitor -- it is
-# what makes an environment build report anything more than "done". Pin this
-# back to the registry once a release carries it.
-appose = { git = "https://github.com/apposed/appose-python", branch = "main" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/skop"]

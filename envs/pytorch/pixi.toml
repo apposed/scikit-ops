@@ -29,11 +29,12 @@ ultralytics = ">=8.3"
 cellpose = ">=4"
 appose = ">=0.11"
 # NB: appose is not listed as a conda dependency here, unlike in
-# envs/unseg-cv. The pinned scikit-ops below depends on it, and pixi cannot
-# satisfy a PyPI dependency on appose with the conda package -- so stating
-# it both ways makes the solve fail outright. This reverts to an ordinary
-# conda dependency once appose 0.12 is released and scikit-ops stops
-# sourcing it from git.
+# envs/unseg-cv, and this is temporary. A conda appose does satisfy the
+# pinned scikit-ops' PyPI dependency on it -- but only once the pin is new
+# enough to have dropped scikit-ops' [tool.uv.sources] git source for
+# appose, which uv honors transitively and which makes the solve
+# unsatisfiable. So this goes back to `appose = ">=0.12"` above as soon as
+# the rev below is bumped past that change and conda-forge carries 0.12.
 
 # NB: micro_sam depends on `napari >=0.5,<0.6` and `pyqt` outright -- it ships
 # a napari plugin and does not split it out. So this environment installs a GUI

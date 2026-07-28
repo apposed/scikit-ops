@@ -121,21 +121,23 @@ Two consequences worth knowing before the first pin lands:
 
 And one the first pin actually cost, which the plan above did not foresee.
 **Appose had to stop being a conda dependency in every environment that gains
-the pin.** Pixi maps its conda packages into the PyPI solve and holds them at
-the version it resolved; the pinned scikit-ops requires appose too, and
-scikit-ops' `[tool.uv.sources]` sources appose from git — which uv honors
-transitively — so the solve is asked for an appose that is simultaneously
-exactly `0.11.0` and a git checkout, and fails outright. Stating appose only
-once, and letting scikit-ops bring it, is what resolves it.
+the pin**, temporarily. Pixi maps its conda packages into the PyPI solve and
+holds them at the version it resolved; the pinned scikit-ops requires appose
+too, and scikit-ops' `[tool.uv.sources]` sourced appose from git — which uv
+honors transitively, from a dependency's own metadata — so the solve was asked
+for an appose that was at once exactly `0.11.0` and a git checkout, and failed
+outright.
 
-Two things follow. The worker's appose now matches the host's, which is more
-correct than the split it replaces. And the environments are that much less
-reproducible, since a branch is not a pin — so this reverts to an ordinary
-conda dependency the moment appose 0.12 is released and scikit-ops stops
-sourcing it from git. `envs/unseg-cv` is exempt from all of it: scikit-ops
-needs Python 3.10 and UNSEG's environment pins 3.9, so that one keeps its
-conda appose and runs off the `sys.path` injection alone, exactly as it did
-before.
+That git source existed only because `PixiInstallMonitor` was unreleased, and
+appose 0.12 has now released it, so `[tool.uv.sources]` is gone. A conda
+appose does satisfy the pin's PyPI dependency once it is: verified, and the
+one remaining step is bumping the rev past that change. Then `appose` goes
+back into `[dependencies]` in all eight and the environments are properly
+reproducible again.
+
+`envs/unseg-cv` is exempt from all of it: scikit-ops needs Python 3.10 and
+UNSEG's environment pins 3.9, so that one keeps its conda appose and runs off
+the `sys.path` injection alone, exactly as it did before.
 
 ## OpSpec → SciJava module
 
