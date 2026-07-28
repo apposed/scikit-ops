@@ -30,7 +30,10 @@ sharing an environment also share a warm worker process, unless one asks for
 
 | Op | Environment | Does |
 | --- | --- | --- |
-| `skop.ops.threshold:otsu` | `skimage` | Otsu thresholding |
+| `skop.ops.threshold:*` | `skimage` | Global thresholding: Otsu, isodata, Li, mean, minimum, triangle, Yen, multi-Otsu |
+| `skop.ops.smooth:*` | `skimage` | Smoothing and denoising: Gaussian, median, mean, Kuwahara, bilateral, TV, wavelet, NL-means, Butterworth |
+| `skop.ops.edges:*` | `skimage` | Derivative filters: Sobel, Scharr, Prewitt, Farid, Roberts, Laplace, DoG, unsharp mask, Frangi, Sato, Meijering |
+| `skop.ops.morphology:*` | `skimage` | Grayscale morphology: erosion, dilation, opening, closing, white/black tophat |
 | `skop.ops.kernels.psf:gaussian_psf` | `skimage` | Gaussian PSF, 2D or 3D |
 | `skop.ops.kernels.paraxial:paraxial_psf` | `skimage` | Paraxial PSF, from wavelength and NA |
 | `skop.ops.kernels.paraxial:paraxial_otf` | `skimage` | Paraxial OTF, the transform of the above |

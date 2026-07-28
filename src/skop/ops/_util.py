@@ -6,7 +6,70 @@ discovery.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from enum import Enum
+
 import numpy as np
+
+
+class Footprint(Enum):
+    """Shape of a structuring element, as the metric its radius measures in.
+
+    ``ball`` is Euclidean and the usual choice: it is isotropic, so an
+    operation does not depend on how the object happens to be oriented.
+    ``box`` is Chebyshev and the fastest, at the cost of favouring the
+    diagonals. ``diamond`` is Manhattan, the tightest of the three.
+    """
+
+    ball = "ball"
+    box = "box"
+    diamond = "diamond"
+
+
+def footprint(ndim: int, radius: int, shape: Footprint = Footprint.ball) -> np.ndarray:
+    """A structuring element of the given radius, in the given dimension.
+
+    Generated rather than taken from ``skimage.morphology``, whose generators
+    are one function per dimension -- ``disk`` for 2-D, ``ball`` for 3-D and
+    nothing beyond. The three shapes are the three usual metrics, so each is a
+    distance from the centre thresholded at ``radius``.
+    """
+    grid = np.indices((2 * radius + 1,) * ndim) - radius
+    if shape is Footprint.ball:
+        distance = np.sqrt((grid.astype(np.float64) ** 2).sum(axis=0))
+    elif shape is Footprint.box:
+        distance = np.abs(grid).max(axis=0)
+    else:
+        distance = np.abs(grid).sum(axis=0)
+    return (distance <= radius).astype(np.uint8)
+
+
+def channel_axis(image: np.ndarray) -> int | None:
+    """``-1`` when a trailing axis looks like RGB(A), else ``None``.
+
+    The same guess :func:`to_gray` makes, for ops that keep the channels
+    rather than collapsing them.
+    """
+    if image.ndim >= 3 and image.shape[-1] in (3, 4):
+        return -1
+    return None
+
+
+def per_channel(
+    image: np.ndarray, fn: Callable[[np.ndarray], np.ndarray]
+) -> np.ndarray:
+    """Apply a spatial filter to each RGB(A) channel, or to the whole array.
+
+    A neighborhood is a spatial notion, and mixing red into green is never
+    what a filter meant. Arrays without a trailing channel axis go through
+    untouched, so an op needs no branch of its own.
+    """
+    if channel_axis(image) is None:
+        return fn(image)
+    return np.stack(
+        [fn(image[..., c]) for c in range(image.shape[-1])],
+        axis=-1,
+    )
 
 
 def to_gray(image: np.ndarray) -> np.ndarray:

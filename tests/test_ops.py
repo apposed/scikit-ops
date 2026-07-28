@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import inspect
 
+import numpy as np
 import pytest
 
 import skop
@@ -212,3 +213,77 @@ def test_psf_models_agree_on_what_the_optics_are_called():
     ):
         names = {p.name for p in BY_NAME[name].params}
         assert set(shared) <= names, f"{name} is missing {set(shared) - names}"
+
+
+def test_the_threshold_family_is_substitutable():
+    # The property a front end depends on when it offers a menu of methods:
+    # picking one is picking a method, never a different set of questions.
+    from skop import Role
+    from skop.ops import threshold
+
+    two_class = [
+        name
+        for name in dir(threshold)
+        if skop.is_op(getattr(threshold, name)) and name != "multiotsu"
+    ]
+    assert len(two_class) >= 7, two_class
+    for name in two_class:
+        spec = skop.spec(getattr(threshold, name))
+        assert [(p.name, p.type, p.default) for p in spec.params] == [
+            ("image", np.ndarray, inspect.Parameter.empty),
+            ("invert", bool, False),
+            ("label_objects", bool, True),
+        ], f"{name} does not match the family's signature"
+        assert spec.output_specs[0].role is Role.labels
+
+
+def test_every_global_threshold_takes_a_whole_stack():
+    # A histogram does not care how many axes it was handed, so none of these
+    # may claim an axis: that is what lets one threshold serve a volume.
+    from skop.ops import threshold
+
+    for name in dir(threshold):
+        fn = getattr(threshold, name)
+        if not skop.is_op(fn):
+            continue
+        axes = next(p for p in skop.spec(fn).params if p.name == "image").axes
+        assert axes.variadic and axes.slots == (), f"{name} claims axes {axes}"
+
+
+@pytest.mark.parametrize("namespace", ["smooth", "edges", "morphology"])
+def test_filters_take_an_image_and_return_one(namespace):
+    # These are filters, not segmenters: whatever they compute is still
+    # something to display as an image, and a front end reads that off the
+    # role rather than guessing from the dtype.
+    import importlib
+
+    from skop import Role
+
+    module = importlib.import_module(f"skop.ops.{namespace}")
+    ops = [
+        getattr(module, name)
+        for name in dir(module)
+        if skop.is_op(getattr(module, name))
+    ]
+    assert len(ops) >= 6, namespace
+    for fn in ops:
+        spec = skop.spec(fn)
+        assert spec.params[0].name == "image"
+        assert spec.params[0].role is Role.image
+        assert len(spec.outputs) == 1
+        assert spec.output_specs[0].role is Role.image
+
+
+def test_footprint_shapes_are_offered_as_a_choice():
+    # Shared by the morphology ops and the median, so a front end that learns
+    # the widget once gets it everywhere.
+    from skop.ops.morphology import Footprint
+
+    for name in (
+        "skop.ops.morphology:erosion",
+        "skop.ops.morphology:white_tophat",
+        "skop.ops.smooth:median",
+    ):
+        shape = next(p for p in BY_NAME[name].params if p.name == "shape")
+        assert shape.type is Footprint
+        assert [m.value for m in shape.type] == ["ball", "box", "diamond"]

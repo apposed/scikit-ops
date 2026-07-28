@@ -10,4 +10,5 @@ python = "3.11.*"
 numpy = "*"
 scipy = "*"
 scikit-image = "*"
+pywavelets = "*"  # Note: an optional scikit-image dep, needed by smooth:wavelet.
 appose = ">=0.11"

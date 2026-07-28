@@ -796,3 +796,296 @@ def test_a_fluorophore_can_stand_in_for_a_wavelength(runner):
     psf = runner.run(gibson_lanni, xy_size=32, z_size=16, wavelength=Fluorophore.DAPI)
     assert psf.shape == (16, 32, 32)
     assert psf.sum() == pytest.approx(1.0, rel=1e-5)
+
+
+def noisy_step(size: int = 64, seed: int = 0) -> np.ndarray:
+    """A step edge under Gaussian noise: the thing edge preservation is about."""
+    rng = np.random.default_rng(seed)
+    image = np.zeros((size, size), dtype=np.float32)
+    image[:, size // 2 :] = 100.0
+    return image + rng.normal(0.0, 5.0, image.shape).astype(np.float32)
+
+
+def salt_and_pepper(image: np.ndarray, fraction: float = 0.05, seed: int = 0):
+    """An image with a fraction of its pixels shot to the extremes."""
+    rng = np.random.default_rng(seed)
+    out = image.copy()
+    hit = rng.random(image.shape) < fraction
+    out[hit] = np.where(rng.random(image.shape)[hit] < 0.5, image.min(), image.max())
+    return out
+
+
+@pytest.mark.env("skimage")
+@pytest.mark.parametrize(
+    "method", ["otsu", "isodata", "li", "mean", "minimum", "triangle", "yen"]
+)
+def test_every_global_threshold_finds_two_squares(runner, method):
+    # The point of having seven: on an easy image they must all agree, so
+    # the choice only starts to matter once the histogram gets hard.
+    from skop.ops import threshold
+
+    image = np.zeros((64, 64), dtype=np.uint8)
+    image[10:25, 10:25] = 200
+    image[40:55, 40:55] = 220
+
+    labels = runner.run(getattr(threshold, method), image=image)
+    assert labels.dtype == np.uint16
+    assert labels.max() == 2, f"{method} did not find both squares"
+
+
+@pytest.mark.env("skimage")
+def test_a_threshold_can_be_inverted_and_left_unlabelled(runner):
+    from skop.ops.threshold import triangle
+
+    image = np.zeros((64, 64), dtype=np.uint8)
+    image[10:25, 10:25] = 200
+
+    mask = runner.run(triangle, image=image, label_objects=False)
+    assert set(np.unique(mask)) == {0, 1}
+    assert mask[10:25, 10:25].all()
+
+    inverted = runner.run(triangle, image=image, invert=True, label_objects=False)
+    assert not inverted[10:25, 10:25].any()
+    assert (mask.astype(bool) ^ inverted.astype(bool)).all()
+
+
+@pytest.mark.env("skimage")
+def test_multiotsu_returns_classes_rather_than_objects(runner):
+    # The one threshold op that is not a foreground/background question.
+    from skop.ops.threshold import multiotsu
+
+    image = np.zeros((60, 60), dtype=np.uint8)
+    image[10:25, 10:25] = 120
+    image[35:50, 35:50] = 240
+
+    classes = runner.run(multiotsu, image=image, classes=3)
+    assert set(np.unique(classes)) == {0, 1, 2}
+    assert (classes[10:25, 10:25] == 1).all()
+    assert (classes[35:50, 35:50] == 2).all()
+
+    # ...and with label_objects it becomes one, cutting at the top threshold.
+    objects = runner.run(multiotsu, image=image, classes=3, label_objects=True)
+    assert objects.max() == 1
+
+
+@pytest.mark.env("skimage")
+def test_median_beats_the_mean_on_salt_and_pepper(runner):
+    # Why there are both: an outlier is discarded by one and spread by the
+    # other, which is the whole argument for a rank filter.
+    from skop.ops.smooth import mean, median
+
+    truth = np.zeros((64, 64), dtype=np.float32)
+    truth[:, 32:] = 100.0
+    corrupted = salt_and_pepper(truth)
+
+    by_median = runner.run(median, image=corrupted, radius=2)
+    by_mean = runner.run(mean, image=corrupted, radius=2)
+    assert rmse(by_median, truth) < rmse(by_mean, truth)
+    assert rmse(by_median, truth) < rmse(corrupted, truth)
+
+
+@pytest.mark.env("skimage")
+@pytest.mark.parametrize("name", ["kuwahara", "bilateral", "tv_chambolle", "median"])
+def test_the_edge_preserving_filters_keep_the_edge(runner, name):
+    # Each of these denoises about as hard as the Gaussian below, and the
+    # difference is what happens at the boundary: they must smooth the flat
+    # regions at least as well while leaving the step nearly intact.
+    from skop.ops import smooth
+
+    image = noisy_step()
+    settings = {
+        "kuwahara": {"radius": 3},
+        "bilateral": {"sigma_color": 0.05, "sigma_spatial": 3.0},
+        "tv_chambolle": {"weight": 0.1},
+        "median": {"radius": 3},
+    }[name]
+
+    filtered = runner.run(getattr(smooth, name), image=image, **settings)
+    blurred = runner.run(smooth.gaussian, image=image, sigma=3.0)
+
+    def jump(x):
+        return float(x[:, 32:].mean(axis=0)[0] - x[:, :32].mean(axis=0)[-1])
+
+    def flat_noise(x):
+        return float(x[:, :24].std())
+
+    assert flat_noise(filtered) < 0.7 * flat_noise(image)
+    assert jump(filtered) > 0.8 * jump(image), f"{name} smeared the edge"
+    assert jump(blurred) < 0.5 * jump(image), "the Gaussian was supposed to smear it"
+
+
+@pytest.mark.env("skimage")
+def test_the_denoisers_preserve_the_intensity_range(runner):
+    # They work internally on a [0, 1] copy so their strengths are portable
+    # between dtypes; this is the test that they scale the result back.
+    from skop.ops import smooth
+
+    image = noisy_step().astype(np.uint16) * 10
+    for name, settings in [
+        ("bilateral", {}),
+        ("tv_chambolle", {}),
+        ("wavelet", {}),
+        ("nl_means", {"patch_size": 3, "patch_distance": 3}),
+    ]:
+        out = runner.run(getattr(smooth, name), image=image, **settings)
+        assert out.dtype == np.float32
+        assert out.mean() == pytest.approx(image.mean(), rel=0.1), name
+
+
+@pytest.mark.env("skimage")
+def test_smoothing_a_volume_and_an_rgb_image(runner):
+    # A neighborhood is spatial, so the channels of an RGB image are filtered
+    # apart -- but the planes of a volume are not.
+    from skop.ops.smooth import kuwahara, median
+
+    volume = np.zeros((8, 32, 32), dtype=np.uint8)
+    volume[2:6, 8:24, 8:24] = 200
+    assert runner.run(median, image=volume, radius=1).shape == volume.shape
+
+    rgb = np.zeros((32, 32, 3), dtype=np.uint8)
+    rgb[8:24, 8:24, 0] = 200
+    filtered = runner.run(kuwahara, image=rgb, radius=2)
+    assert filtered.shape == rgb.shape
+    assert filtered[..., 1].max() == 0, "red leaked into green"
+
+
+@pytest.mark.env("skimage")
+@pytest.mark.parametrize("name", ["sobel", "scharr", "prewitt", "farid", "roberts"])
+def test_the_gradient_filters_respond_at_the_edge(runner, name):
+    from skop.ops import edges
+
+    image = np.zeros((64, 64), dtype=np.float32)
+    image[:, 32:] = 100.0
+
+    response = runner.run(getattr(edges, name), image=image)
+    assert response.dtype == np.float32
+    # Large within two pixels of the boundary, near zero everywhere else.
+    assert response[:, 30:34].max() > 10 * response[:, :28].max()
+
+
+@pytest.mark.env("skimage")
+def test_difference_of_gaussians_picks_out_blobs_of_a_size(runner):
+    # A band-pass keeps what falls between its two scales, which is what
+    # makes it a blob detector rather than a smoother.
+    from skop.ops.edges import difference_of_gaussians
+
+    image = blobs_2d(size=128, sigma=7.0).astype(np.float32)
+    matched = runner.run(
+        difference_of_gaussians, image=image, low_sigma=5.0, high_sigma=12.0
+    )
+    mismatched = runner.run(
+        difference_of_gaussians, image=image, low_sigma=0.5, high_sigma=1.0
+    )
+    assert matched.max() > 5 * mismatched.max()
+
+
+@pytest.mark.env("skimage")
+def test_unsharp_mask_steepens_an_edge(runner):
+    from skop.ops.edges import unsharp_mask
+    from skop.ops.smooth import gaussian
+
+    image = np.zeros((64, 64), dtype=np.float32)
+    image[:, 32:] = 100.0
+    blurred = runner.run(gaussian, image=image, sigma=3.0)
+    sharpened = runner.run(unsharp_mask, image=blurred, radius=3.0, amount=2.0)
+
+    def slope(x):
+        return float(np.diff(x[32]).max())
+
+    assert slope(sharpened) > slope(blurred)
+
+
+@pytest.mark.env("skimage")
+@pytest.mark.parametrize("name", ["frangi", "sato", "meijering"])
+def test_the_ridge_filters_prefer_a_line_to_a_blob(runner, name):
+    # What separates them from the gradient filters: they answer "is this a
+    # filament of about this thickness", not "is this a boundary".
+    from skop.ops import edges
+
+    image = np.zeros((96, 96), dtype=np.float32)
+    image[46:50, 8:88] = 100.0  # A line, four pixels thick.
+
+    response = runner.run(
+        getattr(edges, name),
+        image=image,
+        sigma_min=1.0,
+        sigma_max=3.0,
+        sigma_step=1.0,
+        black_ridges=False,
+    )
+    assert response.dtype == np.float32
+    assert response[44:52, 20:76].mean() > 5 * response[:20, :20].mean() + 1e-6
+
+
+@pytest.mark.env("skimage")
+def test_erosion_and_dilation_bound_the_image(runner):
+    # Every other morphological op is these two composed, so this is the
+    # invariant the rest inherit.
+    from skop.ops.morphology import dilation, erosion
+
+    image = blobs_2d(size=64).astype(np.uint16)
+    eroded = runner.run(erosion, image=image, radius=2)
+    dilated = runner.run(dilation, image=image, radius=2)
+    assert eroded.dtype == image.dtype
+    assert (eroded <= image).all()
+    assert (image <= dilated).all()
+
+
+@pytest.mark.env("skimage")
+def test_white_tophat_is_the_image_minus_its_opening(runner):
+    # Not an implementation detail: it is what makes the radius mean "the
+    # size of the things to keep", and why this is background subtraction.
+    from skop.ops.morphology import opening, white_tophat
+
+    image = blobs_2d(size=64).astype(np.uint16)
+    opened = runner.run(opening, image=image, radius=5)
+    tophat = runner.run(white_tophat, image=image, radius=5)
+    assert np.array_equal(tophat, image - opened)
+
+
+@pytest.mark.env("skimage")
+def test_opening_drops_what_is_smaller_than_the_footprint(runner):
+    # The one thing the radius controls, stated as directly as it can be.
+    from skop.ops.morphology import opening
+
+    image = np.zeros((64, 64), dtype=np.uint8)
+    image[10:30, 10:30] = 200  # Large: survives.
+    image[50:52, 50:52] = 200  # Small: does not.
+
+    opened = runner.run(opening, image=image, radius=4)
+    assert opened[15:25, 15:25].min() == 200, "the large square did not survive"
+    assert opened[48:56, 48:56].max() == 0, "the speck did"
+    # The corners are rounded off, which is what a ball footprint means.
+    assert opened[10, 10] == 0
+
+
+@pytest.mark.env("skimage")
+def test_footprint_shape_reaches_the_op(runner):
+    # The enum crosses into the worker as its value, like Fluorophore does.
+    from skop.ops.morphology import Footprint, dilation
+
+    image = np.zeros((33, 33), dtype=np.uint8)
+    image[16, 16] = 255
+
+    counts = {
+        shape: int((runner.run(dilation, image=image, radius=4, shape=shape) > 0).sum())
+        for shape in Footprint
+    }
+    assert counts[Footprint.diamond] < counts[Footprint.ball] < counts[Footprint.box]
+    assert counts[Footprint.box] == 81
+
+
+@pytest.mark.env("skimage")
+def test_smoothing_before_thresholding(runner):
+    # The workflow these ops exist for: a noisy image Otsu shatters, made
+    # whole by an edge-preserving smooth first.
+    from skop.ops.smooth import kuwahara
+    from skop.ops.threshold import otsu
+
+    truth = np.zeros((96, 96), dtype=np.float32)
+    truth[20:70, 20:70] = 200.0
+    noisy = salt_and_pepper(truth, fraction=0.08, seed=1)
+
+    assert runner.run(otsu, image=noisy).max() > 5, "the test image was too easy"
+    smoothed = runner.run(kuwahara, image=noisy, radius=3)
+    assert runner.run(otsu, image=smoothed).max() == 1
