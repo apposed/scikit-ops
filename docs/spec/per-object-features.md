@@ -1,4 +1,4 @@
-# 0009 — Per-object features
+# Spec — per-object features
 
 **Status:** open question, raised by a real failure. Nothing decided, nothing
 implemented. This records the problem and the shape of the choices while it is
@@ -6,8 +6,8 @@ fresh; it does not pick one.
 
 ## What happened
 
-Both box detectors ([0007](0007-box-detector-ops.md)) originally returned a
-confidence per box:
+Both box detectors ([0007](../design/0007-box-detector-ops.md)) originally
+returned a confidence per box:
 
 ```python
 class Boxes(NamedTuple):
@@ -37,8 +37,8 @@ because of what the vocabulary is:
 
 Every existing role — `image`, `labels`, `points`, `shapes`, `surface`,
 `tracks`, `vectors` — names a napari layer type. That was deliberate
-([0003](0003-semantic-roles.md)): it makes the front end's job a lookup rather
-than a judgement. A role answers exactly one question, *which layer does this
+([0003](../design/0003-semantic-roles.md)): it makes the front end's job a
+lookup rather than a judgement. A role answers exactly one question, *which layer does this
 become?*
 
 For a per-box confidence the honest answer is **none**. It is not a layer; it
@@ -94,9 +94,9 @@ So this is not only about `scores`. It is about whether skop can express
 
 ## What would settle it
 
-The mask detector of [0008](0008-mask-detector-ops.md) produces an area
+The mask detector of [0008](../design/0008-mask-detector-ops.md) produces an area
 and possibly a stability score per mask, and a segmenter workflow
-([0005](0005-workflow-ops.md)) will want to filter boxes by confidence before
+([workflow-ops](workflow-ops.md)) will want to filter boxes by confidence before
 passing them on. Two more real cases, both arriving soon, and both of them will
 say more about which of the four is right than more argument will.
 

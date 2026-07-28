@@ -1,4 +1,4 @@
-# 0005 — Workflow ops: ops that compose ops
+# Spec — workflow ops: ops that compose ops
 
 **Status:** use case exploration, not a design. Nothing is implemented, and
 almost nothing below is decided. The purpose of this document is to write down
@@ -195,3 +195,8 @@ experiments from an intern will tell us more than another design conversation.
   importable id, so a saved recipe stays reachable as a future option. A lambda
   closes that door, and will creep in the first time someone wants to pin
   `num_iters`.
+
+Graduate this file into `design/` when it lands. It was numbered `design/0005`
+for a while, colliding with [dimensional adaptation](../design/0005-dimensional-adaptation.md);
+older references to "0005" in the design documents and in the source mean
+whichever of the two the surrounding text is about.

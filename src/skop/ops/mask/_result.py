@@ -20,7 +20,7 @@ where one stack is one. See docs/design/0008-mask-detector-ops.md.
 No area, no stability score, no predicted IoU. Area is
 ``masks.sum(axis=(1, 2))`` and does not need carrying; the other two are
 MobileSAM's and have no micro_sam counterpart, so they cannot live in a shared
-return type until docs/design/0009-per-object-features.md says how per-object
+return type until docs/spec/per-object-features.md says how per-object
 values travel. The same reason ``Boxes`` carries no scores.
 """
 

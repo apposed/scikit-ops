@@ -1,7 +1,13 @@
 # 0007 — Bounding box detector ops
 
-**Status:** scoping a kind, and the first two implementations. Nothing
-implemented.
+**Status:** implemented. `skop.ops.detect` holds both detectors,
+`envs/segment-everything` and `envs/pytorch` are the two environments,
+`skop.boxes` holds the converters, and `BoxesData` names the canonical format
+in `skop.types`. Scores did not survive contact — see
+[per-object-features](../spec/per-object-features.md). Still unwritten: the
+classical `regionprops` detector, Faster R-CNN, labels-to-boxes, and the
+`Choices` list that would let a workflow pick between them, which belongs to
+[workflow-ops](../spec/workflow-ops.md).
 
 ## The kind
 
@@ -12,8 +18,9 @@ A box detector takes an image and returns boxes:
 def some_detector(image: ImageData, ...) -> Boxes   # NamedTuple(boxes, scores)
 ```
 
-This is stage one of the segmenter in [0005](0005-workflow-ops.md), feeding a
-mask detector ([0008](0008-mask-detector-ops.md)). There are many possible
+This is stage one of the segmenter in
+[workflow-ops](../spec/workflow-ops.md), feeding a mask detector
+([0008](0008-mask-detector-ops.md)). There are many possible
 implementations — FastSAM, MobileSAMv2's `ObjectAwareModel`, Faster R-CNN, a
 classical threshold-and-`regionprops` detector, boxes from an existing label
 image — and the point of the kind is that the segmenter workflow can hold a
@@ -27,9 +34,10 @@ the useful family is the single-class "find everything" detectors — FastSAM,
 question actually being asked. That is also why classes are absent from the
 return type below.
 
-Since they must be substitutable, they share a signature (0005, consideration
-5). The shared core is `image`, plus `conf`, `iou` and `max_det` — the knobs
-users actually turn, and they mean the same thing everywhere.
+Since they must be substitutable, they share a signature (workflow-ops,
+consideration 5). The shared core is `image`, plus `conf`, `iou` and
+`max_det` — the knobs users actually turn, and they mean the same thing
+everywhere.
 Implementation-specific extras (`imgsz`) get defaults and stay at the end. A
 classical detector would have to interpret `conf`/`iou` loosely or ignore them;
 that is fine, and a good early test of how strict "shared signature" has to be.

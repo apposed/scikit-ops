@@ -20,7 +20,7 @@ Everything here is a *theoretical* PSF: computed from optical parameters, no
 measurement involved. Extracting a PSF from a bead image is deliberately not part
 of this — it composes a deconvolution op whose backend depends on the machine, so
 it is a workflow op rather than a plain op. See
-[0005-workflow-ops](0005-workflow-ops.md).
+[workflow-ops](../spec/workflow-ops.md).
 
 We don't want an interactive test for this one, just some standard tests. What we
 will try instead is to make a notebook to test it. Adapt
@@ -108,7 +108,7 @@ excitation/emission pairs; the op wants emission.
 **`psf_from_beads` is out of scope here, and that is a decision rather than an
 omission.** It deconvolves a bead image by a rendered centroid image, so it
 composes `richardson_lucy` -- and which deconvolver it should use depends on
-whether the machine has a GPU. Under 0005 that makes it a command with an
+whether the machine has a GPU. Under workflow-ops that makes it a command with an
 op-valued `deconvolver` parameter, not an op that hardcodes one backend. Two
 things it will need when we get to it: `draw_centroids` from
 `tnia.segmentation.rendering` vendored in, and a note that the original's
@@ -305,7 +305,7 @@ only way to say it.
 
 ### Not in scope
 
-psfmodels in any form; `psf_from_beads`, which becomes a command under 0005;
+psfmodels in any form; `psf_from_beads`, which becomes a command under workflow-ops;
 `load_psf` and `load_and_resize_psf`; sdeconv's own deconvolution algorithms,
 since we have our own; and the OpenCL backend still outstanding from the first
 spec.
