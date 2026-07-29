@@ -31,10 +31,13 @@ from __future__ import annotations
 
 from .deconvolve.with_psf import Deconvolved, deconvolve_with_psf
 from .mask.detect_then_mask import Detected, detect_then_mask
+from .segment.connect_2d_in_3d import Connected, connect_2d_in_3d
 
 __all__ = [
+    "Connected",
     "Deconvolved",
     "Detected",
+    "connect_2d_in_3d",
     "deconvolve_with_psf",
     "detect_then_mask",
 ]

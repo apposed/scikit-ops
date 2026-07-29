@@ -36,11 +36,26 @@ Two workflows and the machinery to render them, 2026-07-28.
   the plugin its `Plugins > scikit-ops > ...` submenu — napari nests a
   plugin's widgets only once there is more than one.
 
-Two workflows landed:
+Three workflows landed:
 
 - `deconvolve_with_psf` — a PSF op paired with a deconvolver.
 - `detect_then_mask` — a box detector paired with a mask detector. The one
   that needed `binds`: both its stages take the image.
+- `connect_2d_in_3d` — normalize the whole volume, segment plane by plane with
+  the segmenter's *own* normalization off, then `connect` the planes. It binds
+  `normalize=False` for every choice rather than offering it, because a
+  checkbox there would let someone switch back on the exact behaviour the
+  workflow exists to avoid. Making that possible meant adding a `normalize`
+  parameter to `cellpose` and `cellpose3`, which had none — Cellpose
+  normalized per plane unconditionally, so two of the three choices would have
+  silently undone step one.
+
+`connect_2d_in_3d` also settles how a workflow pins axes: it passes
+`axes={"image": list("zyx")}` on each `skop.run`, so the segmenter is looped
+over z inside its own worker while the variadic normalizer gets the volume
+whole. The workflow declares `Axes("z", "y", "x")` on its own input so a front
+end can ask which of the caller's axes is z, and passes nothing down — each
+stage's handling is fixed, because getting it wrong is the bug being fixed.
 
 They live in **`src/skop/ops/workflows/`**, mirroring `skop.ops`'s own
 subdirectories, rather than beside the ops they compose. The first draft put
@@ -55,11 +70,6 @@ because the import happened to be spelled as a submodule.
 Nothing keys off the path. `OpSpec.is_workflow` still reads the missing
 environment, and the front end strips the `workflows.` prefix from a label so
 the domain underneath it is what shows.
-
-Each workflow returns its stages' outputs **in the order the stages ran**, not
-in order of importance. A front end adds them to a viewer in declaration order,
-so the pipeline reads down the layer list and the last stage -- the answer --
-lands on top, where a new layer belongs.
 
 Still open, and deliberately so: no preflight (consideration 10) — picking an
 op whose environment is not built simply builds it, and the panel says which
