@@ -327,10 +327,16 @@ class Choices:
         """``(label, "module:function")`` pairs.
 
         The view that survives going over a wire: a Fiji front end needs the
-        menu without needing the Python objects behind it.
+        menu without needing the Python objects behind it. So it also has to
+        survive coming *back* -- a ``Choices`` rebuilt from its wire form holds
+        the IDs themselves, since the functions they name are not importable in
+        the process that read them, and an ID passed through unchanged is what
+        makes this property the fixed point it claims to be. ``op()`` and
+        ``label()`` want live objects and are unavailable on such a one.
         """
         return tuple(
-            (label, f"{op.__module__}:{op.__name__}") for label, op in self.options
+            (label, op if isinstance(op, str) else f"{op.__module__}:{op.__name__}")
+            for label, op in self.options
         )
 
 
@@ -626,6 +632,17 @@ class ParamSpec:
             data["role"] = self.role.value
         if self.axes is not None:
             data["axes"] = _axes_dict(self.axes)
+        if self.choices is not None:
+            # The ids view, not the options: a front end in another language
+            # needs the menu without needing the Python objects behind it.
+            data["choices"] = [
+                {"label": label, "op": op_id} for label, op_id in self.choices.ids
+            ]
+        if self.params_for is not None:
+            data["params_for"] = {
+                "chooser": self.params_for.chooser,
+                "binds": list(self.params_for.binds),
+            }
         return data
 
     @classmethod
@@ -648,7 +665,36 @@ class ParamSpec:
             ui=dict(data.get("ui", {})),
             role=Role(data["role"]) if data.get("role") else None,
             axes=_axes_from_dict(data["axes"]) if data.get("axes") else None,
+            choices=_choices_from_dict(data.get("choices")),
+            params_for=(
+                ParamsFor(
+                    data["params_for"]["chooser"],
+                    binds=tuple(data["params_for"].get("binds", ())),
+                )
+                if data.get("params_for")
+                else None
+            ),
         )
+
+
+def _choices_from_dict(data: list | None) -> Choices | None:
+    """Rebuild a Choices from its wire form.
+
+    The options come back as op *IDs* rather than functions, because the
+    functions are not importable in the process doing the reading -- that is
+    the whole reason the wire form exists. ``Choices.ids`` is therefore the
+    only view that survives the round trip, and it is the one a front end
+    uses; ``op()`` and ``label()`` want live objects and do not.
+    """
+    if not data:
+        return None
+    result = Choices()
+    object.__setattr__(
+        result,
+        "options",
+        tuple((entry["label"], entry["op"]) for entry in data),
+    )
+    return result
 
 
 def _axes_dict(axes: Axes) -> dict:
