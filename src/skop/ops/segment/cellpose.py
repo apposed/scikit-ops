@@ -39,6 +39,7 @@ def cellpose(
         float,
         {"widget_type": "FloatSlider", "min": -6.0, "max": 6.0, "step": 0.1},
     ] = 0.0,
+    normalize: bool = True,
     use_gpu: bool = True,
 ) -> LabelsData:
     """Segment cells with Cellpose.
@@ -49,6 +50,12 @@ def cellpose(
         diameter: Expected cell diameter in pixels; 0 lets Cellpose estimate.
         flow_threshold: Maximum allowed flow error per mask.
         cellprob_threshold: Cell probability cutoff; lower finds more cells.
+        normalize: Whether to percentile-normalize the plane first. Cellpose
+            does this per call, so a caller running it slice by slice over a
+            stack gets each plane stretched to its own range -- which turns a
+            faint plane at the top of a volume into a bright one full of
+            detections. Turn it off and normalize the volume beforehand when
+            that matters; see ``skop.ops.workflows.segment``.
         use_gpu: Whether to use the GPU, when one is available.
 
     Returns:
@@ -67,6 +74,7 @@ def cellpose(
         diameter=diameter if diameter > 0 else None,
         flow_threshold=flow_threshold,
         cellprob_threshold=cellprob_threshold,
+        normalize=normalize,
     )
     # NB: eval returns (masks, flows, styles) or (masks, flows, styles, diams),
     # depending on the Cellpose version.

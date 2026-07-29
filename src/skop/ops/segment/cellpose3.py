@@ -72,6 +72,7 @@ def cellpose3(
         {"widget_type": "FloatSlider", "min": -6.0, "max": 6.0, "step": 0.1},
     ] = 0.0,
     niter: int = 200,
+    normalize: bool = True,
     use_gpu: bool = True,
 ) -> LabelsData:
     """Segment cells with one of Cellpose 3's pretrained models.
@@ -91,6 +92,12 @@ def cellpose3(
             grows the masks it finds.
         niter: Dynamics iterations. More is slower and helps long or
             branched cells, whose pixels need further to travel.
+        normalize: Whether to percentile-normalize the plane first. Cellpose
+            does this per call, so a caller running it slice by slice over a
+            stack gets each plane stretched to its own range -- which turns a
+            faint plane at the top of a volume into a bright one full of
+            detections. Turn it off and normalize the volume beforehand when
+            that matters; see ``skop.ops.workflows.segment``.
         use_gpu: Whether to use the GPU when one is available. Falls back to
             CPU rather than failing if the GPU model cannot be built.
 
@@ -126,5 +133,6 @@ def cellpose3(
         flow_threshold=flow_threshold,
         cellprob_threshold=cellprob_threshold,
         niter=niter,
+        normalize=normalize,
     )
     return np.asarray(result[0]).astype(np.uint16)
