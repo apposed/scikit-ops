@@ -219,25 +219,51 @@ harvested dialog, since the items depend on the shape of an image the user has
 not chosen yet.
 
 The suggestion here was a callback on the image parameter that adds the items
-once a `Dataset` is selected, and it does not work: `DefaultWidgetModel` fires
-a callback from a panel the input harvester has already built, so an item
-added by one gets no widget. **A preprocessor does work.** At
-`InputHarvester.PRIORITY + 1`, imagej-common's `ActiveImagePreprocessor` has
-already filled a single image parameter from the active display, so the axes
-are known before the panel exists: ask skop for the default plan, lay it out
-as items, and the harvester draws one dialog containing all of it.
+once a `Dataset` is selected. It does not work, and the reason rules out the
+whole shape of it: the input harvester builds its panel **once**. A callback
+fires from a panel that already exists, so an item added by one gets no
+widget — and, worse, a combo whose value changes which *other* items ought to
+exist cannot make them appear or take them away. Change which axis fills a
+slot and a different axis becomes leftover; a row of combos has no way to say
+so.
 
-Two consequences. The items are per-run, so `createModule` hands each module
-an `OpModuleInfo` of its own — the same move `DynamicCommand` makes, for the
-same reason. And with no image to inspect, no items are added and the op falls
-back to skop's default plan, which is what P2 and P3 did all along.
+**So the mapping is one line of text**, one token per axis, in the order Fiji
+lists them:
+
+```
+x y z=27 c t!
+```
+
+A slot name feeds that axis to the op, `z!` iterates over it, `z=27` runs at
+one position, `z+` hands it to a variadic op whole. Blank means skop's own
+plan. The name in front of a modifier is a comment — position identifies the
+axis — but a comment naming a *different* axis of the same image is a line
+written in the wrong order, and is refused rather than obeyed.
+
+A preprocessor at `InputHarvester.PRIORITY + 1` still earns its place, but
+only to fill the field's *value*: by then imagej-common's
+`ActiveImagePreprocessor` has put an image in the parameter, so skop can be
+asked what it would do and the dialog opens showing it. The field itself is a
+static item, so it exists with or without an image, and a module needs no
+`ModuleInfo` of its own.
+
+One line also records as one macro argument rather than eight, and is checked
+against the image at run time — so a line that no longer describes the image
+in the dialog is refused rather than misapplied.
 
 ## Threading, progress, cancellation, errors
 
 SciJava already runs modules off the EDT, so there is no equivalent of
-skop-napari `_run.py`'s thread-worker plumbing. `TaskEvent`s drive
-`StatusService`; the harvester's Cancel maps onto Appose task cancellation,
-which `skop.cancel_requested()` reads on the far side.
+skop-napari `_run.py`'s thread-worker plumbing. A run is a SciJava `Task`, so
+it appears in the status bar and the task list; Appose's `TaskEvent`s drive
+its message and progress, and Stop in the task widget and Cancel in the
+dialog both reach the Appose task, which `skop.cancel_requested()` reads on
+the far side.
+
+An environment build gets a `Task` of its own rather than borrowing the run's.
+The two are nested — a build happens inside the first run that needs it — and
+"Running Otsu", stuck at 0% for the four minutes a PyTorch stack takes to
+install, says the wrong thing about what is going on.
 
 Environment builds get the treatment [design 0004](../design/0004-build-feedback.md)
 describes, through appose-java's `PixiInstallMonitor`, which reports the same
