@@ -6,7 +6,8 @@ backends need different environments -- ``richardson_lucy`` runs anywhere,
 iteration and are held numerically equivalent by a test, so a caller that can
 choose is choosing on speed alone.
 
-PSFs to feed them live in ``skop.ops.kernels``.
+PSFs to feed them live in ``skop.ops.kernels``, and the workflow that pairs
+one with a deconvolver is ``skop.ops.workflows.deconvolve``.
 """
 
 from __future__ import annotations

@@ -275,10 +275,110 @@ class Mut:
         return _annotate(item, MUT)
 
 
+@dataclass(frozen=True, init=False)
+class Choices:
+    """A curated list of the ops a parameter may be filled with.
+
+    Attached to a ``Callable`` parameter of a workflow, so that a front end can
+    offer a combo box rather than asking someone to type an import path::
+
+        psf_op: Annotated[Callable, Choices(gaussian=gaussian_psf,
+                                            gibson_lanni=gibson_lanni)]
+
+    The keyword names are the menu labels: "gpu" is a better thing to show a
+    researcher than ``richardson_lucy_cupy``.
+
+    **The list constrains the GUI, not the function.** Passing an op that is
+    not in it stays legal, because that is how the list grows -- someone tries
+    an untested solver in a script, it works, and it gets added here where the
+    change can be reviewed. Curated rather than discovered for the same reason:
+    a list means "I have tested these", where an inventory means only "these
+    are installed".
+    """
+
+    options: tuple[tuple[str, Callable], ...]
+
+    def __init__(self, **options: Callable) -> None:
+        object.__setattr__(self, "options", tuple(options.items()))
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return tuple(label for label, _ in self.options)
+
+    def op(self, label: str) -> Callable:
+        """The op a label names."""
+        return dict(self.options)[label]
+
+    def label(self, fn: Callable) -> str | None:
+        """What this list calls *fn*, if it lists it at all."""
+        return next((label for label, op in self.options if op is fn), None)
+
+    @property
+    def ids(self) -> tuple[tuple[str, str], ...]:
+        """``(label, "module:function")`` pairs.
+
+        The view that survives going over a wire: a Fiji front end needs the
+        menu without needing the Python objects behind it.
+        """
+        return tuple(
+            (label, f"{op.__module__}:{op.__name__}") for label, op in self.options
+        )
+
+
+@dataclass(frozen=True, init=False)
+class ParamsFor:
+    """Marks a parameter as holding the arguments of a chosen op.
+
+    A chooser needs somewhere to put the chosen op's own settings, and a plain
+    dict is that somewhere::
+
+        decon_op: Annotated[Callable, Choices(cpu=..., gpu=...)] = richardson_lucy
+        decon_args: Annotated[dict, ParamsFor("decon_op",
+                                              binds=("image", "psf"))] = None
+
+    ``binds`` names the sub-op parameters the workflow supplies itself, from
+    its own inputs or from an earlier stage's output. A front end renders every
+    *other* parameter of the chosen op and leaves these alone -- which is what
+    stops two stages that both take an image from asking for it twice.
+
+    It is declared rather than inferred. Matching on name would hide the image
+    for free but still not know that a mask generator's ``boxes`` come from the
+    detector, and a rule that covers half the cases is harder to explain than
+    no rule at all.
+    """
+
+    chooser: str
+    binds: tuple[str, ...]
+
+    def __init__(self, chooser: str, *, binds: Any = ()) -> None:
+        # A lone string is the common case and iterating it would bind one
+        # parameter per letter, so take it as the single name it obviously is.
+        if isinstance(binds, str):
+            binds = (binds,)
+        object.__setattr__(self, "chooser", chooser)
+        object.__setattr__(self, "binds", tuple(binds))
+
+
 def direction_of(annotation: Any) -> _Direction | None:
     if get_origin(annotation) is Annotated:
         for meta in get_args(annotation)[1:]:
             if meta is OUT or meta is MUT:
+                return meta
+    return None
+
+
+def choices_of(annotation: Any) -> Choices | None:
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, Choices):
+                return meta
+    return None
+
+
+def params_for_of(annotation: Any) -> ParamsFor | None:
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, ParamsFor):
                 return meta
     return None
 
@@ -325,6 +425,10 @@ class ParamSpec:
     ui: dict = field(default_factory=dict)
     role: Role | None = None
     axes: Axes | None = None
+    #: The ops this parameter may be filled with, if it is a chooser.
+    choices: Choices | None = None
+    #: Which chooser's arguments this parameter carries, if any.
+    params_for: ParamsFor | None = None
 
     @property
     def required(self) -> bool:
@@ -345,7 +449,7 @@ class OpSpec:
     name: str
     module: str
     function: str
-    env: str
+    env: str | None
     main_thread: bool
     exclusive: bool
     form: str
@@ -353,6 +457,17 @@ class OpSpec:
     return_type: Any
     doc: str | None
     return_role: Role | None = None
+
+    @property
+    def is_workflow(self) -> bool:
+        """Whether this op runs on the host and calls other ops.
+
+        The absence of an environment is the statement. ``env`` is what pins an
+        op to a worker; a workflow has nothing to pin, because the ops it calls
+        each bring their own -- and it could not build them from inside a
+        worker anyway.
+        """
+        return self.env is None
 
     @property
     def inputs(self) -> tuple[ParamSpec, ...]:
@@ -402,14 +517,14 @@ class OpSpec:
 
 @dataclass(frozen=True)
 class _OpConfig:
-    env: str
+    env: str | None
     main_thread: bool
     exclusive: bool
 
 
 def op(
     *,
-    env: str,
+    env: str | None = None,
     main_thread: bool = False,
     exclusive: bool = False,
 ) -> Callable[[Callable], Callable]:
@@ -421,6 +536,8 @@ def op(
 
     Args:
         env: ID of the environment this op runs in, naming ``envs/<id>/``.
+            Omit it to declare a **workflow**: an op with nothing to pin,
+            which runs on the host and calls other ops through the runner.
         main_thread: Whether the op must run on the worker's main thread.
         exclusive: Whether the op needs a worker to itself, rather than
             sharing one with other ops assigned to the same environment.
@@ -470,6 +587,8 @@ def spec(fn: Callable) -> OpSpec:
                 ui=_ui_hints(annotation),
                 role=role_of(annotation),
                 axes=axes_of(annotation),
+                choices=choices_of(annotation),
+                params_for=params_for_of(annotation),
             )
         )
 

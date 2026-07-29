@@ -9,14 +9,16 @@ living in the op's declared environment.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import appose
 import numpy as np
 
-from . import _adapt, _codec, _spec
+from . import _adapt, _codec, _progress, _spec
 
 if TYPE_CHECKING:
     from typing import Self
@@ -39,6 +41,81 @@ import numpy  # NB: must precede the worker's I/O loop on Windows.
 import skop.worker
 skop_invoke = skop.worker.invoke
 """
+
+
+@dataclass(frozen=True)
+class _Event:
+    """The shape of an Appose TaskEvent, for progress raised on the host."""
+
+    message: str | None = None
+    current: int | None = None
+    maximum: int | None = None
+
+
+class _HostTask:
+    """Stands in for an Appose task while a workflow runs on the host.
+
+    A workflow has no worker and therefore no task, but everything watching an
+    op expects one: ``skop.progress()`` looks for something to update, and a
+    GUI's Cancel button needs a handle to act on. This is that handle.
+    """
+
+    def __init__(self, on_progress: Callable[[Any], None] | None) -> None:
+        self._on_progress = on_progress
+        self.cancel_requested = False
+        self._child: Any = None
+
+    def update(
+        self,
+        message: str | None = None,
+        current: int | None = None,
+        maximum: int | None = None,
+    ) -> None:
+        self.relay(_Event(message, current, maximum))
+
+    def relay(self, event: Any) -> None:
+        """Pass an event on, whether it came from here or from a sub-op."""
+        if self._on_progress is not None:
+            self._on_progress(event)
+
+    def adopt(self, task: Any) -> None:
+        """Note the sub-op task now running, so a cancel can reach it."""
+        self._child = task
+        if self.cancel_requested:
+            task.cancel()
+
+    def cancel(self) -> None:
+        self.cancel_requested = True
+        # Nearly all of a workflow's time is spent inside a sub-op, so a
+        # cancel aimed at the workflow is useless unless it reaches that.
+        if self._child is not None:
+            self._child.cancel()
+
+
+class _Ambient:
+    """The runner a workflow's own ``skop.run`` calls should go through.
+
+    A workflow does not take a runner as a parameter, for the same reason an
+    op does not take a progress reporter as one (design 0001): it would make
+    calling the function directly awkward, and mode B has to stay a plain
+    Python call. So the runner is ambient, exactly as ``progress()`` is.
+    """
+
+    def __init__(self, runner: Runner, task: _HostTask) -> None:
+        self._runner = runner
+        self._task = task
+
+    def run(self, fn: Callable, args: dict | None = None, **kwargs: Any) -> Any:
+        # A sub-op's progress is the workflow's progress: without this the
+        # panel sits at "running" for the four minutes SAM takes.
+        kwargs.setdefault("on_progress", self._task.relay)
+        kwargs.setdefault("on_start", self._task.adopt)
+        return self._runner.run(fn, args, **kwargs)
+
+
+_current: contextvars.ContextVar[_Ambient | None] = contextvars.ContextVar(
+    "skop_runner", default=None
+)
 
 
 def _default_root() -> Path:
@@ -237,6 +314,14 @@ class Runner:
         call_args = dict(args or {})
         call_args.update(kwargs)
         _validate(spec, call_args)
+
+        if spec.is_workflow:
+            # No environment to dispatch to, and nothing to encode: a workflow
+            # runs here, and the ops it calls each cross the boundary
+            # themselves. Axis adaptation is skipped for the same reason --
+            # the sub-ops adapt their own arrays.
+            return self._run_here(fn, call_args, on_progress, on_start)
+
         adaptations = _adaptations(fn, call_args, axes, plans, position)
 
         service = self.service(spec, variant)
@@ -288,6 +373,25 @@ class Runner:
             return _unpack(spec, outputs, buffers)
         finally:
             _codec.release(refs, unlink=True)
+
+    def _run_here(
+        self,
+        fn: Callable,
+        call_args: dict,
+        on_progress: Callable[[Any], None] | None,
+        on_start: Callable[[Any], None] | None,
+    ) -> Any:
+        """Call a workflow in this process, with this runner made ambient."""
+        task = _HostTask(on_progress)
+        if on_start is not None:
+            on_start(task)
+        reporting = _progress._bind(task)
+        ambient = _current.set(_Ambient(self, task))
+        try:
+            return fn(**call_args)
+        finally:
+            _current.reset(ambient)
+            _progress._unbind(reporting)
 
     def close(self) -> None:
         """Shut down every worker this runner started."""
@@ -370,5 +474,13 @@ def default_runner() -> Runner:
 
 
 def run(fn: Callable, args: dict | None = None, **kwargs: Any) -> Any:
-    """Run an op via the default Runner."""
+    """Run an op via the default Runner.
+
+    Inside a workflow this goes through *that* runner instead, so a sub-op
+    reuses the warm workers the workflow was started with -- and so a panel's
+    progress bar and Cancel button reach it.
+    """
+    ambient = _current.get()
+    if ambient is not None:
+        return ambient.run(fn, args, **kwargs)
     return default_runner().run(fn, args, **kwargs)

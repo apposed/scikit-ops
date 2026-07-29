@@ -27,11 +27,55 @@ def test_collection_is_not_empty():
     assert len(SPECS) >= 15
 
 
-@pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
+WORKFLOWS = [s for s in SPECS if s.is_workflow]
+LEAVES = [s for s in SPECS if not s.is_workflow]
+
+
+@pytest.mark.parametrize("spec", LEAVES, ids=lambda s: s.name)
 def test_op_declares_a_known_environment(spec):
     runner = skop.Runner()
     # Raises FileNotFoundError, listing what does exist, if the env is absent.
     assert runner.env_config(spec.env).exists()
+
+
+def test_there_are_workflows():
+    assert WORKFLOWS, "expected at least one op with no environment"
+
+
+@pytest.mark.parametrize("spec", WORKFLOWS, ids=lambda s: s.name)
+def test_workflow_choosers_have_choices(spec):
+    """Every op-valued parameter of a workflow offers a curated list.
+
+    A bare ``Callable`` parameter is legal but unrenderable: a front end has
+    nothing to put in the combo box, so it would be hidden and stuck on its
+    default. Catching it here is cheaper than noticing in napari.
+    """
+    from collections.abc import Callable
+
+    bare = [p.name for p in spec.inputs if p.type is Callable and p.choices is None]
+    assert bare == [], f"{spec.name} has op params with no Choices: {bare}"
+
+
+@pytest.mark.parametrize("spec", WORKFLOWS, ids=lambda s: s.name)
+def test_workflow_bindings_name_real_parameters(spec):
+    """What a stage says it binds must exist on every op it offers.
+
+    This is the check that keeps two stages from both asking for the image:
+    the binding is declared, so a typo in it would silently put the widget
+    back rather than fail. Every choice is checked, not just the default,
+    because a binding that holds for one is meaningless if it misses another.
+    """
+    for param in spec.inputs:
+        if param.params_for is None:
+            continue
+        chooser = next(p for p in spec.inputs if p.name == param.params_for.chooser)
+        for label, fn in chooser.choices.options:
+            names = {p.name for p in skop.spec(fn).inputs}
+            missing = sorted(set(param.params_for.binds) - names)
+            assert not missing, (
+                f"{spec.name}.{param.name} binds {missing}, "
+                f"which {label} ({fn.__name__}) does not take"
+            )
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)

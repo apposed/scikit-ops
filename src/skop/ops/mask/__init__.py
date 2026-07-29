@@ -4,7 +4,8 @@ Stage two of a detect-then-segment workflow, fed by ``skop.ops.detect``. The
 distinction from ``skop.ops.segment`` is what decides where the objects are:
 Cellpose and StarDist decide for themselves and return a label image, while a
 mask detector is *told*, by a prompt, and returns one mask per prompt. That
-separation is what lets a workflow pair any detector with any mask detector.
+separation is what lets a workflow pair any detector with any mask detector,
+which ``skop.ops.workflows.mask`` does.
 
 They return masks rather than labels because SAM-family masks overlap -- a
 cell and the debris on it, a coin behind a coin -- and a label image cannot

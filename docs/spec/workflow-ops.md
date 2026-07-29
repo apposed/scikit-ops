@@ -1,13 +1,70 @@
 # Spec — workflow ops: ops that compose ops
 
-**Status:** use case exploration, not a design. Nothing is implemented, and
-almost nothing below is decided. The purpose of this document is to write down
-*what two real workflows need* — `psf_from_beads` and a two-stage segmenter —
-clearly enough that we recognise the right design when we see it. The mechanism
-sketches (`Choices`, a `workflow` marker, preflight) are there to make the use
-case concrete and to be argued with; treat them as illustrations, not proposals
-we have signed up to. Read the **Why** and the **Considerations** as the
-content, and expect the syntax to change.
+**Status:** a first iteration is implemented — see *What landed* below. The
+rest of this document is the use-case exploration it was built from, kept as
+written. Most of it still stands; where the implementation settled a question,
+the section says so. Read the **Why** and the **Considerations** as the
+content, and expect the parts marked *not designed yet* to change.
+
+## What landed
+
+Two workflows and the machinery to render them, 2026-07-28.
+
+- **The marker is the absence of an environment.** `@op()` with no `env`
+  declares a workflow; `OpSpec.is_workflow` is `env is None`. No flag, no
+  second decorator — of the three options left open below, this is the one
+  that needed no new vocabulary.
+- **`Choices(label=op, ...)`** on a `Callable` parameter, as sketched.
+  `ParamSpec.choices` carries it, and `Choices.ids` gives `(label, "mod:fn")`
+  pairs for a front end that cannot hold Python objects.
+- **`ParamsFor("chooser", binds=(...))`** on a partnering dict parameter: the
+  chosen op's settings live there, and `binds` names what the workflow supplies
+  itself. This is the answer to *partial binding*, flagged below as the thing
+  most likely to be got wrong first. It is declared, not inferred — matching on
+  name would hide `image` for free but still not know that a mask generator's
+  `boxes` come from the detector, and a rule covering half the cases is harder
+  to explain than none.
+- **The runner is ambient**, exactly as `progress()` is: `Runner.run` binds
+  itself for the duration of a workflow, so `skop.run` inside the body reuses
+  the warm workers, and a sub-op's progress and cancellation reach the panel.
+  Mode B is unaffected — outside a run, `skop.run` falls through to the default
+  runner.
+- **skop-napari draws a workflow with one combo box per stage**, the chosen
+  op's own widgets underneath, rebuilt on change. Nearly free: the widgets
+  under a chooser are built by the same `build_inputs` that builds the panel's.
+  It is a second widget contribution, `Workflows`, which is also what earns
+  the plugin its `Plugins > scikit-ops > ...` submenu — napari nests a
+  plugin's widgets only once there is more than one.
+
+Two workflows landed:
+
+- `deconvolve_with_psf` — a PSF op paired with a deconvolver.
+- `detect_then_mask` — a box detector paired with a mask detector. The one
+  that needed `binds`: both its stages take the image.
+
+They live in **`src/skop/ops/workflows/`**, mirroring `skop.ops`'s own
+subdirectories, rather than beside the ops they compose. The first draft put
+them by domain and let `is_workflow` do the telling-apart; that reads well in a
+script and badly in a source tree, where somebody wanting to write a workflow
+has to read sixty signatures to find the two that exist. The separate tree also
+makes the dependency one-way and visible -- workflows import ops, never the
+reverse -- which removed a real fragility: `mask/__init__.py` re-exporting a
+workflow reached back into its own half-initialized package, and worked only
+because the import happened to be spelled as a submodule.
+
+Nothing keys off the path. `OpSpec.is_workflow` still reads the missing
+environment, and the front end strips the `workflows.` prefix from a label so
+the domain underneath it is what shows.
+
+Each workflow returns its stages' outputs **in the order the stages ran**, not
+in order of importance. A front end adds them to a viewer in declaration order,
+so the pipeline reads down the layer list and the last stage -- the answer --
+lands on top, where a new layer belongs.
+
+Still open, and deliberately so: no preflight (consideration 10) — picking an
+op whose environment is not built simply builds it, and the panel says which
+environment a choice will use so that is not a surprise. Axis adaptation does
+not reach into a stage; a sub-op gets the array as the workflow passes it.
 
 ## Naming
 
