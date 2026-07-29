@@ -79,5 +79,16 @@ def richardson_lucy_cupy(
         estimate = estimate * correction / htones
         estimate[estimate < 0] = DELTA
 
+        # Wait for the iteration actually to finish. Every cupy call above
+        # queues work and returns at once, so without this the loop issues all
+        # num_iters iterations in a few milliseconds -- reporting each -- and
+        # then blocks on the transfer at the end. The bar would sweep to 100%
+        # and sit there while the GPU did the work, and Cancel would arrive
+        # long after every iteration had been queued and so do nothing.
+        #
+        # The cost is that the queue can no longer run ahead. For FFTs this
+        # size that is small, and a progress bar that lies is worse.
+        cp.cuda.runtime.deviceSynchronize()
+
     progress("Deconvolution complete", num_iters, num_iters)
     return padded.crop_and_restore(cp.asnumpy(estimate))
