@@ -45,6 +45,37 @@ dev = [
     "toml",
     "validate-pyproject[all]",
 ]
+# The host the notebooks and interactive tests run in -- not an op
+# environment. Ops bring their own; this holds only what an example itself
+# imports, plus the kernel. ipykernel is named rather than left to arrive with
+# jupyterlab, because VS Code starts the kernel itself and never sees
+# jupyterlab at all.
+#
+# pixi/examples builds the same environment with the other tool, and the two
+# are meant to stay in step -- same name, same contents.
+examples = [
+    "ipykernel",
+    "jupyterlab",
+    "matplotlib",
+    "scikit-image",
+    "tifffile",
+    # Projection figures -- xy beside zy, with the z axis stretched to match
+    # the voxel aspect. A host dependency, deliberately: no op imports it, and
+    # the decon code migrated out of tnia-python rather than wrapping it. If
+    # that reverses later -- several decon backends worth wrapping rather than
+    # porting -- this line stays and an op-level one joins it.
+    "tnia-python",
+    # The interactive tests open a viewer, so the examples host carries one.
+    # NB: PyQt6 rather than PyQt5, which ships no Apple Silicon wheels -- the
+    # pixi side takes conda-forge's `pyqt` instead, where that is not a
+    # constraint.
+    "napari[pyqt6]",
+]
+
+[tool.uv]
+# Kept in .venv by default, so a bare `uv sync` does not strip the kernel out
+# from under VS Code -- it prunes anything the selected groups do not name.
+default-groups = ["dev", "examples"]
 
 [project.urls]
 homepage = "https://github.com/apposed/scikit-ops"

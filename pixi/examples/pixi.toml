@@ -1,0 +1,45 @@
+[project]
+# The host the notebooks and interactive tests run in, built with pixi. The
+# uv equivalent is the `examples` dependency group in ../../pyproject.toml,
+# and the two are meant to hold the same things -- pick whichever tool you
+# already have.
+#
+# Lean on purpose. No torch, no cellpose, no CUDA: ops run in their own
+# environments under envs/, which skop builds when they are first needed, and
+# an op's dependencies never belong here. Adding one would rebuild the
+# monolith this design exists to avoid.
+name = "examples"
+authors = ["bnorthan <bnorthan@gmail.com>"]
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
+version = "0.1.0"
+
+[dependencies]
+python = "3.12.*"
+pip = "*"
+# The kernel, for notebooks/ -- named explicitly rather than left to arrive
+# with jupyterlab, since VS Code starts the kernel itself and never runs lab.
+ipykernel = "*"
+jupyterlab = "*"
+matplotlib = "*"
+# For skimage.data samples, and for the ops that a notebook calls directly.
+scikit-image = "*"
+tifffile = "*"
+# The viewer the interactive tests open. conda-forge's `pyqt` is PyQt5, where
+# the uv group takes PyQt6 -- there for want of Apple Silicon wheels on PyPI,
+# which is not a constraint here.
+napari = "*"
+pyqt = "*"
+
+[pypi-dependencies]
+scikit-ops = { path = "../..", editable = true }
+# Projection figures (show_xy_zy_slice). Not on conda-forge, and a host
+# dependency by decision: no op imports tnia-python.
+tnia-python = "*"
+
+[tasks]
+# Makes this environment selectable as a kernel in Jupyter and VS Code, under
+# a name that says what it is rather than a path to a .venv.
+register-kernel = """python -m ipykernel install --user \
+    --name=scikit-ops-examples --display-name 'scikit-ops (examples)'"""
+lab = "jupyter lab"
