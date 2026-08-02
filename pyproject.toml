@@ -64,7 +64,9 @@ examples = [
     # the decon code migrated out of tnia-python rather than wrapping it. If
     # that reverses later -- several decon backends worth wrapping rather than
     # porting -- this line stays and an op-level one joins it.
-    "tnia-python",
+    # `[plotting]` only: the base install is bare, and the other extras drag in
+    # albumentations and friends that nothing here calls.
+    "tnia-python[plotting]",
     # The interactive tests open a viewer, so the examples host carries one.
     # NB: PyQt6 rather than PyQt5, which ships no Apple Silicon wheels -- the
     # pixi side takes conda-forge's `pyqt` instead, where that is not a

@@ -4351,7 +4351,7 @@ examples = [
     { name = "napari", extras = ["pyqt6"] },
     { name = "scikit-image" },
     { name = "tifffile" },
-    { name = "tnia-python" },
+    { name = "tnia-python", extras = ["plotting"] },
 ]
 
 [[package]]

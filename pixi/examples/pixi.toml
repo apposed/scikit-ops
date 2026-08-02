@@ -35,7 +35,7 @@ pyqt = "*"
 scikit-ops = { path = "../..", editable = true }
 # Projection figures (show_xy_zy_slice). Not on conda-forge, and a host
 # dependency by decision: no op imports tnia-python.
-tnia-python = "*"
+tnia-python = { version = "*", extras = ["plotting"] }
 
 [tasks]
 # Makes this environment selectable as a kernel in Jupyter and VS Code, under
