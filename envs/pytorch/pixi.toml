@@ -27,7 +27,6 @@ python = "3.11.*"
 numpy = "*"
 ultralytics = ">=8.3"
 cellpose = ">=4"
-appose = ">=0.11"
 # NB: appose is not listed as a conda dependency here, unlike in
 # envs/unseg-cv, and this is temporary. A conda appose does satisfy the
 # pinned scikit-ops' PyPI dependency on it -- but only once the pin is new
