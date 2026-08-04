@@ -250,6 +250,10 @@ uv run pytest --build-envs -m env # only the op tests
 uv run pytest -m "not env"        # only the fast ones
 ```
 
+Running the notebooks and the interactive tests is a separate setup, since they
+need a host environment and the ops do not run in it:
+[notebooks/README.md](notebooks/README.md).
+
 ### Checking that the environments still solve
 
 Building is slow; solving is not. `scripts/check_envs.py` resolves every
