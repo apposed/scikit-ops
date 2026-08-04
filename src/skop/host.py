@@ -45,8 +45,20 @@ CALL = "skop_invoke(task, module, function, kwargs, plans)"
 # The insertion is at position 0, so a checkout shadows the copy of skop that
 # the environment installs. That is deliberate: a developer editing an op sees
 # the edit without bumping the pin every environment's identity depends on.
+# NB: MPLBACKEND is dropped because a worker inherits its caller's environment,
+# and a Jupyter kernel sets MPLBACKEND=module://matplotlib_inline.backend_inline
+# to get inline plots. matplotlib reads it at import and raises if it names a
+# backend it cannot load -- and matplotlib_inline is a Jupyter package no op
+# environment carries.
+#
+# So an op that imports pyplot (ultralytics does, deep in its chain) died from a
+# notebook and worked from a script, surviving only where something had pulled
+# matplotlib_inline in transitively. Popped before any op module is imported;
+# nothing in a worker draws, so none needs a backend chosen by its caller.
 INIT = """
+import os
 import sys
+os.environ.pop("MPLBACKEND", None)
 sys.path.insert(0, {root!r})
 import numpy  # NB: must precede the worker's I/O loop on Windows.
 import skop.worker
