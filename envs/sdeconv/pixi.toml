@@ -65,7 +65,7 @@ torchvision = "*"
 # because skop.host.INIT puts src at sys.path[0]. See
 # docs/spec/fiji-front-end.md; it becomes an ordinary version constraint
 # once scikit-ops is released.
-scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "dc46a814ffbc4287d0496d5213d7e1661652ed9b" }
+scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "76c5c45100c2b168931583b44d6168e798260b12" }
 sdeconv = ">=1,<2"
 
 # Torch, stated exactly as envs/pytorch states it: CUDA builds where there are
