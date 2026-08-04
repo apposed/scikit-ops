@@ -250,6 +250,22 @@ uv run pytest --build-envs -m env # only the op tests
 uv run pytest -m "not env"        # only the fast ones
 ```
 
+### Checking that the environments still solve
+
+Building is slow; solving is not. `scripts/check_envs.py` resolves every
+`envs/*/pixi.toml` without downloading anything, and exits non-zero if one is
+unsatisfiable:
+
+```sh
+python scripts/check_envs.py
+```
+
+This catches what the tests structurally cannot: they run *inside* an
+environment, and so cannot tell you whether that environment could still be
+created today. One already built keeps working from its lock file however
+broken its `pixi.toml` becomes — which is how an unsolvable `envs/pytorch`
+survived a week. Run it after editing anything under `envs/`.
+
 CI runs `--build-envs`, since these ops are the whole point of the project and
 nothing else validates them against the stacks they target. The flag is also
 settable as `PYTEST_ADDOPTS=--build-envs`, which is handy when the pytest
