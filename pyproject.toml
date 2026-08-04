@@ -89,6 +89,16 @@ tracker = "https://github.com/apposed/appose/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/skop"]
 
+# skop builds each op's environment from envs/<env-id>/pixi.toml. Without these
+# a wheel installs code that cannot build anything.
+#
+# Mapped in, not moved: site-packages is shared, so a top-level envs/ would be a
+# name nobody owns. The repo keeps its layout; runner._default_envs_dir prefers
+# a checkout when there is one. The pixi.lock files come too, so an install
+# resolves to the developer's packages rather than today's channels.
+[tool.hatch.build.targets.wheel.force-include]
+"envs" = "skop/envs"
+
 [tool.ruff]
 line-length = 88
 # Vendored upstream algorithm: keep it diffable against its source.

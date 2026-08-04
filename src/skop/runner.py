@@ -111,12 +111,20 @@ def _default_root() -> Path:
 
 
 def _default_envs_dir(root: Path) -> Path:
-    """The ``envs`` directory of the checkout whose ``src`` is *root*.
+    """Where the ``envs/<env-id>/pixi.toml`` recipes live.
 
-    Note: environment definitions are data alongside the source tree, not
-    inside it, so they sit one level up from the packages themselves.
+    Two places, because there are two ways to have skop. A checkout keeps them
+    beside ``src``, where they are edited. An install has no tree, so they ride
+    inside the package, put there by ``force-include`` in pyproject.toml.
+
+    The checkout wins when both exist -- the same rule ``host.INIT`` applies to
+    the code, so an edited recipe takes effect without a reinstall. Falls back
+    to the packaged path, so a failure names where an install actually looked.
     """
-    return root.parent / "envs"
+    checkout = root.parent / "envs"
+    if checkout.is_dir():
+        return checkout
+    return Path(__file__).resolve().parent / "envs"
 
 
 class Runner:
