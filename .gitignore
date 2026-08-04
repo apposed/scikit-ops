@@ -63,3 +63,6 @@ Thumbs.db
 
 # Test data
 test_images/
+
+# Personal pixi host, for pointing a dependency at a local checkout.
+pixi/tnia-dev/

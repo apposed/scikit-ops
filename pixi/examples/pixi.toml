@@ -1,4 +1,4 @@
-[project]
+[workspace]
 # The host the notebooks and interactive tests run in, built with pixi. The
 # uv equivalent is the `examples` dependency group in ../../pyproject.toml,
 # and the two are meant to hold the same things -- pick whichever tool you
@@ -33,9 +33,8 @@ pyqt = "*"
 
 [pypi-dependencies]
 scikit-ops = { path = "../..", editable = true }
-# Projection figures (show_xy_zy_slice). Not on conda-forge, and a host
-# dependency by decision: no op imports tnia-python.
-tnia-python = { version = "*", extras = ["plotting"] }
+# Plotting helpers the notebooks draw with: projections, box and mask overlays.
+tnia-python = { version = ">=0.2.2", extras = ["plotting"] }
 
 [tasks]
 # Makes this environment selectable as a kernel in Jupyter and VS Code, under
