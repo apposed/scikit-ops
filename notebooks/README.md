@@ -12,14 +12,31 @@ This is the thing to understand first, because everything else follows from it.
 The host holds only what a notebook itself imports: a kernel, matplotlib,
 scikit-image for its sample images, tnia-python for the plotting helpers, and
 napari for the interactive tests. **No torch, no cellpose, no CUDA.** Ops run in
-their *own* environments, which skop builds under `envs/` the first time one is
-called, and an op's dependencies never belong in the host — adding one rebuilds
-the monolith this project exists to avoid.
+their *own* environments, built the first time one is called, and an op's
+dependencies never belong in the host — adding one rebuilds the monolith this
+project exists to avoid.
+
+`envs/<env-id>/pixi.toml` is the *recipe*. The built environment goes somewhere
+else entirely — appose keeps them all together, outside any checkout:
+
+```
+~/.local/share/appose/skop-<env-id>
+```
+
+which is `C:\Users\<you>\.local\share\appose\` on Windows too; there is no
+platform-specific branch. Set `APPOSE_ENVS_DIR` to put them elsewhere.
 
 So the first run of a notebook that calls a real op is slow: it builds one or
 two PyTorch stacks, several gigabytes each, and then each model downloads its
 weights. Build phases print as they happen. A long silence means something is
 wrong, not that it is thinking.
+
+After that it is instant, and the cache is keyed by environment rather than by
+notebook — so the second call is fast, and so is the first call tomorrow, in a
+different notebook, or from napari. Anything on the machine that asks for the
+same environment reuses the one already built. An op on the shared `pytorch`
+environment may therefore start immediately the first time you ever call it,
+because something else built it.
 
 ## Building the host
 
@@ -44,6 +61,38 @@ uv sync
 pip install -e .
 pip install jupyterlab matplotlib scikit-image tifffile "tnia-python[plotting]"
 ```
+
+Without a checkout, take scikit-ops from git — it is not on PyPI yet — and name
+only what the notebook you want imports. For `segmentation/cellpose_mixed.ipynb`
+that is:
+
+```sh
+pip install ipykernel matplotlib tifffile scikit-image \
+    "scikit-ops @ git+https://github.com/apposed/scikit-ops.git"
+python -m ipykernel install --user \
+    --name scikit-ops-examples --display-name "scikit-ops (examples)"
+```
+
+`numpy` and `appose` arrive as scikit-ops' own dependencies, and pixi does not
+need installing — appose downloads its own into the environments directory
+above. `jupyterlab` is only for `jupyter lab`; VS Code starts the kernel itself,
+which is why `ipykernel` is named separately. Add `imagecodecs` if you point a
+notebook at a compressed TIFF.
+
+## A kernel that crashes on the first plot (Windows)
+
+Start VS Code **from inside `pixi shell`**, rather than switching to the kernel
+in an editor that is already running.
+
+`kernel.json` launches the interpreter directly, with no environment
+activation, so a conda/pixi environment's `Library\bin` never reaches `PATH`.
+Every import then succeeds and the first matplotlib *draw* dies with a
+delay-load failure — exit `0xC06D007F`, no Python traceback, just "Kernel
+crashed". Even an empty `plt.figure()` + `canvas.draw()` is enough to trigger
+it, which is how to tell this apart from a problem in the notebook.
+
+A plain pip venv does not have this problem: PyPI wheels carry their own DLLs
+rather than relying on activation.
 
 ## Working on tnia-python at the same time
 
