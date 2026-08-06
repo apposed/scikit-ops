@@ -13,7 +13,7 @@ from __future__ import annotations
 import importlib
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_origin
 
 from . import _adapt, _codec, _progress, _spec
 
@@ -78,13 +78,31 @@ def _coerce(spec: _spec.OpSpec, args: dict) -> dict:
         if param.name not in args:
             continue
         value = args[param.name]
-        declared = param.type
+        if value is None:
+            # An optional parameter left empty. Nothing to rebuild, and
+            # Path(None) would raise.
+            continue
+        declared = _unwrap_optional(param.type)
         if isinstance(declared, type) and issubclass(declared, Enum):
             if not isinstance(value, declared):
                 args[param.name] = declared(value)
         elif declared is Path and not isinstance(value, Path):
             args[param.name] = Path(value)
     return args
+
+
+def _unwrap_optional(annotation: Any) -> Any:
+    """``X`` from ``X | None``, and anything else unchanged.
+
+    A parameter that may be left empty is spelled ``X | None``, which is a
+    union rather than ``X`` -- so without this, an optional Path or Enum
+    would travel as a string and arrive as one, while the same op called
+    directly received the real type.
+    """
+    if get_origin(annotation) is None:
+        return annotation
+    args = [a for a in get_args(annotation) if a is not type(None)]
+    return args[0] if len(args) == 1 else annotation
 
 
 def _check_args(spec: _spec.OpSpec, args: dict) -> None:
