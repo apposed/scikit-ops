@@ -26,6 +26,7 @@ not crash the description.
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 from typing import Any
 
 from . import _adapt, _spec
@@ -76,8 +77,76 @@ skop_plan = skop.host.plan
 skop_constants = skop.host.constants
 """
 
+# The same two scripts, appending rather than inserting.
+#
+# `root` is only worth putting first when it is a checkout, which is the case
+# the shadowing above exists for. When skop is installed normally, `root` is
+# the host's site-packages -- and putting *that* first hands the worker every
+# package the host has, built for the host's Python. A worker on a different
+# Python then fails at `import numpy`, before skop_invoke is ever defined, and
+# reports only `NameError: name 'skop_invoke' is not defined`.
+#
+# Appending keeps the one case that still needs the path: envs/unseg-cv has no
+# pinned scikit-ops at all, because scikit-ops requires Python 3.10 and UNSEG's
+# pins 3.9, so it reaches skop through this path alone. Last on sys.path is
+# enough for that, and lets every environment that does install skop use its
+# own copy.
+INIT_APPEND = """
+import os
+import sys
+os.environ.pop("MPLBACKEND", None)
+sys.path.append({root!r})
+import numpy  # NB: must precede the worker's I/O loop on Windows.
+import skop.worker
+skop_invoke = skop.worker.invoke
+"""
+
+METADATA_INIT_APPEND = """
+import sys
+sys.path.append({root!r})
+import skop.host
+skop_describe = skop.host.describe
+skop_plan = skop.host.plan
+skop_constants = skop.host.constants
+"""
+
 DESCRIBE = "skop_describe(package)"
 PLAN = "skop_plan(op, param, shape, axes, position, mapping, dispositions)"
+
+
+def is_checkout(root: "Path | str") -> bool:
+    """Whether *root* is a source tree rather than an install directory.
+
+    A checkout's ``root`` holds only skop, so putting it first on a worker's
+    ``sys.path`` shadows nothing else. An install's ``root`` is the host's
+    site-packages, which holds everything -- see the note on ``INIT_APPEND``.
+
+    Compared against this interpreter's own package directories rather than
+    matched by name, because "site-packages" is not the only spelling: a
+    virtualenv, a conda env and a Debian system install each place them
+    differently.
+    """
+    import sysconfig
+
+    root = Path(root).resolve()
+    installed = {
+        Path(path).resolve()
+        for key in ("purelib", "platlib")
+        if (path := sysconfig.get_paths().get(key))
+    }
+    return root not in installed
+
+
+def init_script(root: "Path | str", metadata: bool = False) -> str:
+    """The init script for a worker, given where this skop lives.
+
+    Chooses between inserting and appending ``root``; see ``INIT_APPEND``.
+    """
+    if is_checkout(root):
+        template = METADATA_INIT if metadata else INIT
+    else:
+        template = METADATA_INIT_APPEND if metadata else INIT_APPEND
+    return template.format(root=str(root))
 CONSTANTS = "skop_constants()"
 
 
@@ -91,6 +160,11 @@ def constants() -> dict:
         "init": INIT,
         "call": CALL,
         "metadata_init": METADATA_INIT,
+        # Additive: a host that only knows the two above keeps the behaviour
+        # it had. One that can tell a checkout from an install should prefer
+        # these when skop is installed -- see the note on INIT_APPEND.
+        "init_append": INIT_APPEND,
+        "metadata_init_append": METADATA_INIT_APPEND,
         "describe": DESCRIBE,
         "plan": PLAN,
         "wire_types": list(_spec.WIRE_TYPES),

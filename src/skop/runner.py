@@ -20,7 +20,8 @@ import numpy as np
 
 from . import _adapt, _codec, _progress, _spec
 from .host import CALL as _CALL
-from .host import INIT as _INIT
+from .host import INIT as _INIT  # noqa: F401  (kept for out-of-process hosts)
+from .host import init_script as _init_script_for
 
 if TYPE_CHECKING:
     from typing import Self
@@ -236,7 +237,7 @@ class Runner:
         return env
 
     def _init_script(self, env_id: str) -> str:
-        script = _INIT.format(root=str(self.root))
+        script = _init_script_for(self.root)
         extra = self.envs_dir / env_id / "init.py"
         if extra.exists():
             script = f"{script}\n{extra.read_text(encoding='utf-8')}"

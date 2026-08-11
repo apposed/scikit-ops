@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 import skop
+import skop.host
 import skop.types
 from skop import host
 from skop.ops import toy
@@ -373,3 +374,56 @@ def test_constants_describe_the_vocabularies():
     assert set(constants["wire_types"]) == set(skop.WIRE_TYPES)
     assert set(constants["roles"]) == {r.value for r in skop.Role}
     assert set(constants["dispositions"]) == {skop.ITERATE, skop.SELECT, skop.PASS}
+
+
+# --- Where the worker looks for skop --------------------------------------
+#
+# A checkout's root holds only skop, so it goes first and shadows the copy
+# an environment installs. An install's root is the host's site-packages,
+# which holds everything, and putting that first hands a worker the host's
+# whole environment -- fatal when the two run different Pythons. See the
+# note on skop.host.INIT_APPEND.
+
+
+def test_a_source_tree_is_a_checkout(tmp_path):
+    assert skop.host.is_checkout(tmp_path)
+
+
+def test_site_packages_is_not_a_checkout():
+    import sysconfig
+
+    purelib = sysconfig.get_paths()["purelib"]
+    assert not skop.host.is_checkout(purelib)
+
+
+def test_checkout_root_goes_first(tmp_path):
+    script = skop.host.init_script(tmp_path)
+    assert "sys.path.insert(0, " in script
+    assert "sys.path.append(" not in script
+
+
+def test_installed_root_goes_last():
+    import sysconfig
+
+    script = skop.host.init_script(sysconfig.get_paths()["purelib"])
+    assert "sys.path.append(" in script
+    assert "sys.path.insert(0, " not in script
+
+
+def test_metadata_variant_tracks_the_same_decision(tmp_path):
+    import sysconfig
+
+    assert "skop_describe" in skop.host.init_script(tmp_path, metadata=True)
+    installed = skop.host.init_script(
+        sysconfig.get_paths()["purelib"], metadata=True
+    )
+    assert "sys.path.append(" in installed
+
+
+def test_constants_still_carry_the_original_scripts():
+    """Additive: a host that knows only these two behaves as it did."""
+    constants = skop.host.constants()
+    assert constants["init"] == skop.host.INIT
+    assert constants["metadata_init"] == skop.host.METADATA_INIT
+    assert "init_append" in constants
+    assert "metadata_init_append" in constants
