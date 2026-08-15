@@ -21,7 +21,9 @@ envs/<env-id>/init.py     optional; runs in each worker before its I/O loop
 ```
 
 An op declares one by ID: `@op(env="stardist-tf")`. Several ops may declare the
-same one. `Runner` keys both its Appose environments and its warm worker
+same one. *Which* one a new op should declare is
+[0016](0016-choosing-an-environment.md); this document is only about the
+mechanism. `Runner` keys both its Appose environments and its warm worker
 services on that ID, so ops sharing an environment share a process.
 
 `stardist2d` and `segment_nuclei` share one TensorFlow build and one warm
