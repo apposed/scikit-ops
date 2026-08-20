@@ -39,6 +39,7 @@ load-bearing.
 | [0014](design/0014-make-decon-ops.md) | Richardson-Lucy on numpy and cupy, and the Gaussian PSF |
 | [0015](design/0015-augment-ops.md) | Augmentation as its own kind of op, separate from training — *proposed* |
 | [0016](design/0016-choosing-an-environment.md) | Which environment a new op declares: anchors, and why a small new one beats a bigger old one |
+| [0017](design/0017-memory-and-tiled-processing.md) | Data too big for memory: an op declaring what it needs, and tiling — *proposed, undesigned* |
 
 ## Spec
 
