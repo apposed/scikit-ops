@@ -1,7 +1,9 @@
 # 0015 — Augment ops
 
-**Status:** proposed. Nothing built. `grep -i augment src/` returns nothing
-today; the only mention anywhere is [design 0011], points 5 and 6.
+**Status:** proposed, and deliberately behind [design 0011]. Nothing built.
+`grep -i augment src/` returns nothing today. The section at the bottom of
+this document originally argued augmentation should be built *before* training
+ops; that has been reversed, and the reasoning is recorded there.
 
 Augmentation is named in 0011 as a step inside the training story. This
 document argues it should not be — it is its own kind of op, useful before any
@@ -184,12 +186,36 @@ there for one pipeline, and stop working as soon as order matters.
   above, the recipe is the part outside callers reuse, so its shape matters
   more than the rest of the signature.
 
-## Why this is worth doing before training ops
+## Why this is *not* worth doing before training ops
 
-It needs nothing that does not exist. No path role, no session handles, no
-long-running worker — arrays in, arrays out, in an environment. It is the one
-part of 0011 that is buildable today, and building it settles the truth-role
-question that the training ops will need answered anyway.
+This section originally argued the opposite: that augmentation needs nothing
+which does not exist — no path role, no session handles, no long-running
+worker, just arrays in and arrays out — and so was the one part of 0011
+buildable today.
+
+All of that is still true, and it is the reason to reverse the conclusion.
+**Augmentation needing no new machinery is exactly what makes it not urgent.**
+albumentations installs in the host environment without a fight: numpy,
+opencv, no CUDA, no framework pin. A caller who wants augmented patches today
+imports it and calls it. An op would be a nicer way to do something that
+already works.
+
+Training is the opposite case. StarDist's TensorFlow stack cannot go in the
+host, and no amount of care with the caller's code changes that — an isolated
+environment is the only way to run it at all. That is what ops are *for*, so
+that is what gets built first.
+
+What this document settles about the truth role still needs settling, and
+0011's decision does not settle it — a manifest of paths sidesteps the
+question rather than answering it. It comes back the moment augmentation
+becomes an op, and 0011's *What is still open* names the same gap from the
+other side.
+
+One thing 0011 found that lands here: StarDist's inline hook is `augmenter=`,
+a Python callable `(x, y) -> (xt, yt)`. A callable cannot cross the worker
+boundary, so the table above — "inline augmentation is a parameter on the
+training op" — cannot mean passing a function. It has to be a name or a spec
+the worker resolves on its own side.
 
 [design 0011]: 0011-deep-learning-training-ops.md
 [0001]: 0001-ops-are-plain-functions.md

@@ -43,6 +43,8 @@ sharing an environment also share a warm worker process, unless one asks for
 | `skop.ops.segment.cellpose:cellpose` | `cellpose` | Cellpose segmentation |
 | `skop.ops.segment.stardist2d:stardist2d_fluo` | `stardist-tf` | StarDist 2D, pretrained fluorescence |
 | `skop.ops.segment.stardist2d:stardist2d_he` | `stardist-tf` | StarDist 2D, pretrained H&E |
+| `skop.ops.segment.stardist2d:stardist2d_custom` | `stardist-tf` | StarDist 2D, model loaded from a directory |
+| `skop.ops.train.stardist2d:train_stardist2d` | `stardist-tf` | StarDist 2D training, file pairs in, model path out |
 | `skop.ops.segment.starfun3d:segment_nuclei` | `stardist-tf` | StarDist 3D nuclei |
 | `skop.ops.labels:connect` | `skimage` | One label per object along an axis, by linking overlaps |
 | `skop.ops.generate:synthetic_nuclei` | `skimage` | Synthetic 3D test volume |
