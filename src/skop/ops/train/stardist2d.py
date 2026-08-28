@@ -36,6 +36,7 @@ def train_stardist2d(
         int, {"widget_type": "SpinBox", "min": 1, "max": 64}
     ] = 4,
     unet_n_depth: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 6}] = 3,
+    grid_size_xy: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 8}] = 1,
     n_rays: Annotated[int, {"widget_type": "SpinBox", "min": 4, "max": 128}] = 32,
     val_size: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 100}] = 2,
     sparse: bool = False,
@@ -61,6 +62,9 @@ def train_stardist2d(
             Must not exceed the size of the patches on disk.
         train_batch_size: Patches per batch.
         unet_n_depth: Depth of the U-Net backbone.
+        grid_size_xy: Predict on a subsampled grid, widening the field of
+            view. ``train_patch_size`` must stay divisible by
+            ``grid_size_xy * 2 ** unet_n_depth``.
         n_rays: Number of radial directions the star-convex polygons use.
         val_size: How many pairs, taken from the end, to hold out for
             validation.
@@ -146,6 +150,7 @@ def train_stardist2d(
         train_patch_size=(train_patch_size, train_patch_size),
         train_batch_size=train_batch_size,
         unet_n_depth=unet_n_depth,
+        grid=(grid_size_xy, grid_size_xy),
     )
     net = StarDist2D(config=config, name=name, basedir=model_dir)
     net.prepare_for_training()
