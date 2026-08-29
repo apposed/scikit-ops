@@ -39,6 +39,7 @@ def train_stardist2d(
     grid_size_xy: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 8}] = 1,
     n_rays: Annotated[int, {"widget_type": "SpinBox", "min": 4, "max": 128}] = 32,
     val_size: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 100}] = 2,
+    initial_model: str = "",
     sparse: bool = False,
 ) -> str:
     """Train a StarDist 2D model and write it to disk.
@@ -66,6 +67,15 @@ def train_stardist2d(
             view. ``train_patch_size`` must stay divisible by
             ``grid_size_xy * 2 ** unet_n_depth``.
         n_rays: Number of radial directions the star-convex polygons use.
+        initial_model: Continue training from this model rather than from
+            random weights. Either a directory holding a StarDist model, or
+            the name of a pretrained one ("2D_versatile_fluo"), downloaded
+            on first use -- resolved here rather than by the caller, since
+            only this environment has StarDist to ask. Whichever it is, it is copied to the destination
+            first, so the model trained from is left alone unless it *is* the
+            destination. Its saved architecture and patch/batch settings are
+            used, and the corresponding arguments above are ignored -- they
+            are baked into a trained model and cannot change.
         val_size: How many pairs, taken from the end, to hold out for
             validation.
         sparse: Set when the labels use StarDist's sparse convention, where
@@ -74,13 +84,21 @@ def train_stardist2d(
             loss is switched off.
 
     Returns:
-        The path the model was written to: ``<model_dir>/<name>``.
+        The path the model was written to: ``<model_dir>/<name>``. A
+        ``history.csv`` of epoch, loss and val_loss is written there too, and
+        appended to when training continues, so the loss curve spans every run
+        the model has had rather than only the last.
     """
+    import csv
+    import json
     import os
+    import shutil
 
     import keras
     from stardist.models import Config2D, StarDist2D
     from tifffile import imread
+
+    history = []
 
     class _ProgressCallback(keras.callbacks.Callback):
         """Relay Keras epoch events to whoever is running the op.
@@ -94,6 +112,7 @@ def train_stardist2d(
             logs = logs or {}
             loss = logs.get("loss", float("nan"))
             val_loss = logs.get("val_loss", float("nan"))
+            history.append((epoch + 1, loss, val_loss))
             progress(
                 f"Epoch {epoch + 1}/{epochs} — "
                 f"loss {loss:.4f}, val_loss {val_loss:.4f}",
@@ -143,16 +162,56 @@ def train_stardist2d(
     X_val = np.asarray(X_val, dtype=np.float32)
     Y_val = np.asarray(Y_val, dtype=np.int32)
 
-    config = Config2D(
-        n_rays=n_rays,
-        axes=image_axes if image_axes.endswith("C") else image_axes + "C",
-        n_channel_in=n_channel_in,
-        train_patch_size=(train_patch_size, train_patch_size),
-        train_batch_size=train_batch_size,
-        unet_n_depth=unet_n_depth,
-        grid=(grid_size_xy, grid_size_xy),
-    )
-    net = StarDist2D(config=config, name=name, basedir=model_dir)
+    out_dir = os.path.join(model_dir, name)
+
+    if initial_model:
+        # A builtin is a directory too -- from_pretrained downloads it and
+        # loads it exactly as this does, so resolving one is just finding
+        # where it landed.
+        source = initial_model
+        if not os.path.isdir(source):
+            from csbdeep.models.pretrained import get_model_folder
+
+            # Not from_pretrained: that builds the model and then nulls its
+            # basedir, so the folder is only reachable by accident. This
+            # downloads and returns the folder, which is all that is wanted.
+            source = str(get_model_folder(StarDist2D, initial_model))
+
+        n_channel_pretrained = None
+        if os.path.isfile(os.path.join(source, "config.json")):
+            with open(os.path.join(source, "config.json")) as f:
+                n_channel_pretrained = json.load(f).get("n_channel_in")
+        if (
+            n_channel_pretrained is not None
+            and n_channel_pretrained != n_channel_in
+        ):
+            raise ValueError(
+                f"{initial_model} takes {n_channel_pretrained}-channel input "
+                f"and the patches have {n_channel_in}. A model's first layer "
+                f"is fixed at training time, so this one cannot continue from "
+                f"these patches."
+            )
+
+        # Copied rather than trained in place, so continuing produces a new
+        # model and leaves its parent intact -- unless the caller aimed at the
+        # parent on purpose, which is how "keep training this one" is said.
+        if os.path.abspath(source) != os.path.abspath(out_dir):
+            shutil.copytree(source, out_dir, dirs_exist_ok=True)
+        # config=None loads the saved config and weights from out_dir.
+        net = StarDist2D(config=None, name=name, basedir=model_dir)
+        progress(f"Continuing from {source}")
+    else:
+        config = Config2D(
+            n_rays=n_rays,
+            axes=image_axes if image_axes.endswith("C") else image_axes + "C",
+            n_channel_in=n_channel_in,
+            train_patch_size=(train_patch_size, train_patch_size),
+            train_batch_size=train_batch_size,
+            unet_n_depth=unet_n_depth,
+            grid=(grid_size_xy, grid_size_xy),
+        )
+        net = StarDist2D(config=config, name=name, basedir=model_dir)
+
     net.prepare_for_training()
     net.callbacks.append(_ProgressCallback())
 
@@ -181,5 +240,19 @@ def train_stardist2d(
         steps_per_epoch=steps_per_epoch,
     )
 
-    return os.path.join(model_dir, name)
+    # Appended, not overwritten: a model that has been continued has one
+    # curve across every run, which is the thing worth plotting.
+    history_path = os.path.join(out_dir, "history.csv")
+    done = 0
+    if os.path.exists(history_path):
+        with open(history_path) as f:
+            done = sum(1 for _ in f) - 1
+    with open(history_path, "a", newline="") as f:
+        writer = csv.writer(f)
+        if done <= 0:
+            writer.writerow(["epoch", "loss", "val_loss"])
+        for epoch, loss, val_loss in history:
+            writer.writerow([done + epoch, loss, val_loss])
+
+    return out_dir
 
