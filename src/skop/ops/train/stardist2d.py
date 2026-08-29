@@ -40,6 +40,7 @@ def train_stardist2d(
     n_rays: Annotated[int, {"widget_type": "SpinBox", "min": 4, "max": 128}] = 32,
     val_size: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 100}] = 2,
     initial_model: str = "",
+    dataset_id: str = "",
     sparse: bool = False,
 ) -> str:
     """Train a StarDist 2D model and write it to disk.
@@ -76,6 +77,10 @@ def train_stardist2d(
             destination. Its saved architecture and patch/batch settings are
             used, and the corresponding arguments above are ignored -- they
             are baked into a trained model and cannot change.
+        dataset_id: Opaque label for the training data, recorded in
+            history.csv so a plot can mark where it changed. Nothing here
+            interprets it -- what identifies a dataset is the caller's
+            business.
         val_size: How many pairs, taken from the end, to hold out for
             validation.
         sparse: Set when the labels use StarDist's sparse convention, where
@@ -85,9 +90,11 @@ def train_stardist2d(
 
     Returns:
         The path the model was written to: ``<model_dir>/<name>``. A
-        ``history.csv`` of epoch, loss and val_loss is written there too, and
-        appended to when training continues, so the loss curve spans every run
-        the model has had rather than only the last.
+        ``history.csv`` is written there too -- epoch, loss, val_loss, plus
+        the run number, the model name and the dataset id -- and appended to
+        when training continues. So the curve spans every run the model and
+        its ancestors have had, and a change in any of the last three columns
+        marks where something about the training changed.
     """
     import csv
     import json
@@ -157,10 +164,15 @@ def train_stardist2d(
 
     n_channel_in = X[0].shape[-1]
 
-    X_train = np.asarray(X_train, dtype=np.float32)
-    Y_train = np.asarray(Y_train, dtype=np.int32)
-    X_val = np.asarray(X_val, dtype=np.float32)
-    Y_val = np.asarray(Y_val, dtype=np.int32)
+    # Lists of arrays, not one stacked array. StarDist takes either, and
+    # stacking demands every patch be the same size -- which a patch
+    # directory written across several sessions is not. It crops
+    # train_patch_size out of each one anyway, so only being at least that
+    # big matters.
+    X_train = [x.astype(np.float32) for x in X_train]
+    Y_train = [y.astype(np.int32) for y in Y_train]
+    X_val = [x.astype(np.float32) for x in X_val]
+    Y_val = [y.astype(np.int32) for y in Y_val]
 
     out_dir = os.path.join(model_dir, name)
 
@@ -242,17 +254,35 @@ def train_stardist2d(
 
     # Appended, not overwritten: a model that has been continued has one
     # curve across every run, which is the thing worth plotting.
+    # Rewritten rather than appended to: a history from before a column
+    # existed has a shorter header, and appending wider rows to it produces a
+    # file that reads back wrong rather than failing.
+    columns = ["epoch", "loss", "val_loss", "run", "model", "dataset"]
     history_path = os.path.join(out_dir, "history.csv")
-    done = 0
+    previous = []
     if os.path.exists(history_path):
         with open(history_path) as f:
-            done = sum(1 for _ in f) - 1
-    with open(history_path, "a", newline="") as f:
-        writer = csv.writer(f)
-        if done <= 0:
-            writer.writerow(["epoch", "loss", "val_loss"])
+            previous = list(csv.DictReader(f))
+
+    last_run = int(previous[-1].get("run") or 0) if previous else 0
+    done = len(previous)
+
+    with open(history_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, columns, restval="")
+        writer.writeheader()
+        for row in previous:
+            writer.writerow({k: row.get(k, "") for k in columns})
         for epoch, loss, val_loss in history:
-            writer.writerow([done + epoch, loss, val_loss])
+            writer.writerow(
+                {
+                    "epoch": done + epoch,
+                    "loss": loss,
+                    "val_loss": val_loss,
+                    "run": last_run + 1,
+                    "model": name,
+                    "dataset": dataset_id,
+                }
+            )
 
     return out_dir
 
