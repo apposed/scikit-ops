@@ -18,6 +18,27 @@ import numpy as np
 from skop import op, progress
 
 
+def _take_only_what_is_needed(tf) -> None:
+    """Ask TensorFlow for the memory it uses, not for the whole card.
+
+    By default TF claims almost all free VRAM the first time it touches the
+    GPU. That is fine for a process that owns the machine and wrong for one
+    of several -- a napari session holding torch models, a second worker, or
+    just this op called twice. The symptom is a RESOURCE_EXHAUSTED failure
+    while nvidia-smi shows most of the memory held by a process that is not
+    using it.
+
+    Must run before any GPU work; TensorFlow refuses to change this once the
+    device is initialised, which is why the failure is ignored rather than
+    raised.
+    """
+    for gpu in tf.config.list_physical_devices("GPU"):
+        try:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError:  # already initialised; nothing to be done here
+            pass
+
+
 @op(env="stardist-tf")
 def train_stardist2d(
     images: list[str],
@@ -102,8 +123,11 @@ def train_stardist2d(
     import shutil
 
     import keras
+    import tensorflow as tf
     from stardist.models import Config2D, StarDist2D
     from tifffile import imread
+
+    _take_only_what_is_needed(tf)
 
     history = []
 
