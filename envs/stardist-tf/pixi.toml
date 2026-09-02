@@ -47,11 +47,26 @@ python = "==3.10"
 # platforms -- 3.12 with TF 2.16, rather than 3.10 with TF 2.10.
 python = "*"
 
+# CUDA on Windows only. TF 2.10 predates the CUDA-carrying wheels and ships no
+# CUDA of its own, so on win-64 it has to come from conda. Nothing else is
+# needed: pixi's activation already puts %CONDA_PREFIX%\Library\bin on PATH,
+# which is how Windows finds DLLs.
+#
+# Linux needs none of this: tensorflow[and-cuda] below brings its own CUDA in
+# site-packages, where TensorFlow finds it without help. macOS has no CUDA at
+# all; Apple Silicon uses tensorflow-metal.
+[target.win-64.dependencies]
+cudatoolkit = "11.2.*"
+cudnn = "8.1.*"
+
 [target.win-64.pypi-dependencies]
 tensorflow = "==2.10.1"
 
+# 2.15 is the ceiling, not a preference: 2.16 defaults to Keras 3, which
+# csbdeep and stardist 0.9.1 do not work with. The [and-cuda] extra pulls
+# NVIDIA's own pip wheels, so this is the whole CUDA story on Linux.
 [target.linux-64.pypi-dependencies]
-tensorflow = "==2.10.1"
+tensorflow = { version = "==2.15.*", extras = ["and-cuda"] }
 
 [target.osx-64.pypi-dependencies]
 tensorflow = "*"
@@ -67,27 +82,10 @@ channels = ["conda-forge"]
 [feature.nometal.target.osx-arm64.pypi-dependencies]
 tensorflow = "*"
 
-# Variant: CUDA acceleration on Windows and Linux.
-[feature.cuda]
-channels = ["nvidia", "conda-forge"]
-
-[feature.cuda.target.win-64.dependencies]
-cudatoolkit = "11.2.*"
-cudnn = "8.1.*"
-
-[feature.cuda.target.linux-64.dependencies]
-cudatoolkit = "11.2.*"
-cudnn = "8.1.*"
-
-[feature.cuda.target.win-64.activation.env]
-PATH = "%CONDA_PREFIX%\\Library\\bin;%PATH%"
-
-[feature.cuda.target.linux-64.activation.env]
-LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
-
-# NB: Only 'default' is installed on build. The others are materialized on
-# demand, via Runner.run(..., variant="cuda"), which needs appose >= 0.12.
+# NB: Only 'default' is installed on build; 'nometal' is materialized on
+# demand via Runner.run(..., variant="nometal"). There is no longer a 'cuda'
+# variant -- CUDA rides with the wheel on Linux and comes from conda on
+# Windows, both in the default.
 [environments]
 default = { solve-group = "default" }
-cuda = { features = ["cuda"], solve-group = "default" }
 nometal = { features = ["nometal"], solve-group = "default" }
