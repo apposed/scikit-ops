@@ -66,3 +66,6 @@ test_images/
 
 # Personal pixi host, for pointing a dependency at a local checkout.
 pixi/tnia-dev/
+
+# Claude Code local settings
+.claude/
