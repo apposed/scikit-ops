@@ -8,6 +8,7 @@ living in the op's declared environment.
 
 from __future__ import annotations
 
+import json
 import contextlib
 import contextvars
 from collections.abc import Callable, Iterator
@@ -200,6 +201,95 @@ class Runner:
         for child in sorted(self.envs_dir.iterdir()):
             if (child / "pixi.toml").exists():
                 yield child.name
+
+    def env_dir(self, env_id: str) -> Path:
+        """Where Appose keeps the built environment for *env_id*.
+
+        Matching ``environment``'s ``appose.pixi(config).name(f"skop-{env_id}")``.
+        The directory need not exist; that is what "missing" means below.
+        """
+        try:
+            from appose.util.filepath import appose_envs_dir
+        except ImportError:  # older appose kept it next door
+            from appose.util.environment import appose_envs_dir
+
+        return Path(appose_envs_dir()) / f"skop-{env_id}"
+
+    def environment_status(self, env_id: str) -> str:
+        """Whether the built environment matches its definition.
+
+        One of ``"missing"``, ``"stale"`` or ``"up to date"``. Answered from
+        the two files, without building anything, so it costs nothing to ask.
+
+        Appose records the full text of the pixi.toml it built from, in
+        ``appose.json`` beside the environment. Comparing that against the
+        definition in ``envs/<env_id>/pixi.toml`` says whether the environment
+        anyone is about to run in is the one currently described.
+
+        Worth having because the failure it catches is silent. An environment
+        built before a fix stays built, keeps running, and reports nothing --
+        which is how a stack can be missing CUDA for months while every run
+        appears to succeed.
+        """
+        config = self.env_config(env_id)
+        record = self.env_dir(env_id) / "appose.json"
+        if not record.exists():
+            return "missing"
+        try:
+            built = json.loads(record.read_text()).get("content", "")
+        except (OSError, ValueError):
+            return "stale"
+        return (
+            "up to date"
+            if built.strip() == config.read_text().strip()
+            else "stale"
+        )
+
+    def ensure_environment(
+        self,
+        env_id: str,
+        variant: str | None = None,
+        report: Callable[[str], None] = print,
+    ) -> Any:
+        """Build *env_id* if it is missing or out of date, saying which.
+
+        ``environment`` builds or reuses and tells you neither, so a cell that
+        sits silent for ten minutes looks the same as one that did nothing.
+        This says what it is about to do first, and subscribes to the build
+        output for the duration if nothing else has, so a rebuild is visible
+        as it happens rather than only in the wall clock.
+
+        Args:
+            env_id: The environment to ensure, e.g. ``"stardist-tf"``.
+            variant: A named pixi sub-environment, or None for the default.
+            report: Where the status lines go. ``print`` suits a notebook.
+
+        Returns:
+            The Appose environment, as ``environment`` does.
+        """
+        status = self.environment_status(env_id)
+        report(f"{env_id}: {status}")
+        if status == "up to date":
+            return self.environment(env_id, variant)
+
+        report(
+            f"{env_id}: building from {self.env_config(env_id)} -- "
+            f"this takes minutes and gigabytes on a first build"
+        )
+        added = []
+        if not self._build_output:
+            self._build_output.append(report)
+            added.append(self._build_output)
+        if not self._build_error:
+            self._build_error.append(report)
+            added.append(self._build_error)
+        try:
+            env = self.environment(env_id, variant)
+        finally:
+            for subscribers in added:
+                subscribers.pop()
+        report(f"{env_id}: ready")
+        return env
 
     def environment(self, env_id: str, variant: str | None = None) -> Any:
         """Build (or reuse) the Appose environment for an env ID.
