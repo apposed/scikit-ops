@@ -16,6 +16,7 @@ from typing import Annotated
 import numpy as np
 
 from skop import op, progress
+from skop.types import ImageData
 
 
 def _take_only_what_is_needed(tf) -> None:
@@ -310,3 +311,128 @@ def train_stardist2d(
 
     return out_dir
 
+
+# ---------------------------------------------------------------------------
+# Before training: what can the network see?
+#
+# A network cannot segment an object larger than its receptive field -- the
+# information does not reach the output. The symptom is one large object
+# detected as several small ones, which reads as a training problem and is
+# not.
+#
+# This lives beside the training op rather than in a category of its own
+# because it takes that op's architecture parameters: grid, depth and kernel
+# size are what set the receptive field, and a change to one is a change to
+# both. It is a pre-flight check for training, not a separate kind of work.
+# ---------------------------------------------------------------------------
+
+@op(env="stardist-tf")
+def receptive_field_stardist2d(
+    model_dir: Annotated[str, {"widget_type": "FileEdit", "mode": "d"}] = "",
+    grid_size_xy: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 8}] = 1,
+    unet_n_depth: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 6}] = 3,
+    unet_kernel_size: Annotated[
+        int, {"widget_type": "SpinBox", "min": 3, "max": 7, "step": 2}
+    ] = 3,
+    n_channel_in: Annotated[int, {"widget_type": "SpinBox", "min": 1, "max": 8}] = 1,
+    img_size: Annotated[
+        int, {"widget_type": "SpinBox", "min": 64, "max": 4096, "step": 64}
+    ] = 512,
+) -> ImageData:
+    """The impulse response of a StarDist 2D network, as an image.
+
+    Args:
+        model_dir: Measure the model in this directory. When empty, a network
+            is built from the parameters below instead -- which is the point:
+            the answer is available before anything is trained.
+        grid_size_xy: Predict on a subsampled grid. Multiplies the receptive
+            field, because StarDist pools the input down to grid size before
+            the U-Net.
+        unet_n_depth: Depth of the U-Net backbone. Each level roughly doubles
+            the receptive field.
+        unet_kernel_size: Convolution kernel size.
+        n_channel_in: Input channels. Does not affect the extent, but the
+            network has to be built with the right shape.
+        img_size: Size of the test image. Must be a power of two, and must be
+            **larger than the receptive field being measured** -- otherwise
+            the response fills the image and what comes back is the size of
+            the image rather than the size of the field. The op raises if the
+            response reaches the border.
+
+    Returns:
+        The impulse response, ``img_size`` square: the absolute difference
+        between the network's output for a single bright central pixel and its
+        output for an empty image. Non-zero exactly where information from
+        that pixel reached. ``skop.ops.inspect.extent`` turns it into a
+        number, and it displays directly as a picture of the field.
+    """
+    import numpy as np
+    import tensorflow as tf
+    from scipy.ndimage import zoom
+    from stardist.models import Config2D, StarDist2D
+
+    _take_only_what_is_needed(tf)
+
+    # Measuring several architectures in one session otherwise leaves every
+    # network resident: TensorFlow keeps the graph, and a worker is reused
+    # across calls. A sweep of five then fills the card before anything is
+    # trained.
+    tf.keras.backend.clear_session()
+
+    if img_size & (img_size - 1):
+        raise ValueError(
+            f"img_size must be a power of two, not {img_size}: StarDist's own "
+            f"measurement asserts it."
+        )
+
+    if model_dir:
+        progress(f"Loading {model_dir}")
+        import os
+
+        net = StarDist2D(
+            config=None,
+            name=os.path.basename(os.path.normpath(model_dir)),
+            basedir=os.path.dirname(os.path.normpath(model_dir)),
+        )
+    else:
+        progress("Building an untrained network")
+        net = StarDist2D(
+            config=Config2D(
+                n_rays=32,
+                axes="YXC",
+                n_channel_in=n_channel_in,
+                grid=(grid_size_xy, grid_size_xy),
+                unet_n_depth=unet_n_depth,
+                unet_kernel_size=(unet_kernel_size, unet_kernel_size),
+            ),
+            name=None,
+            basedir=None,
+        )
+
+    # The same impulse StarDist sends: one bright pixel, and an empty image to
+    # subtract the network's constant response to nothing.
+    shape = (img_size, img_size)
+    mid = tuple(s // 2 for s in shape)
+    x = np.zeros((1,) + shape + (net.config.n_channel_in,), dtype=np.float32)
+    z = np.zeros_like(x)
+    x[(0,) + mid + (slice(None),)] = 1
+
+    progress("Sending an impulse through the network")
+    y = net.keras_model.predict(x, verbose=0)[0][0, ..., 0]
+    y0 = net.keras_model.predict(z, verbose=0)[0][0, ..., 0]
+
+    grid = tuple((np.array(shape) / np.array(y.shape)).astype(int))
+    response = np.abs(zoom(y, grid, order=0) - zoom(y0, grid, order=0))
+
+    reached = response > 0
+    if reached[0].any() or reached[-1].any() or reached[:, 0].any() or reached[:, -1].any():
+        raise ValueError(
+            f"The response reaches the border of a {img_size}px test image, so "
+            f"the receptive field is at least that wide and cannot be measured "
+            f"here. Raise img_size to the next power of two."
+        )
+
+    result = response.astype(np.float32)
+    del net
+    tf.keras.backend.clear_session()
+    return result
