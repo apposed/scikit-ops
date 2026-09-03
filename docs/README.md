@@ -45,6 +45,11 @@ load-bearing.
 | [0017](design/0017-memory-and-tiled-processing.md) | Memory declarations and tiling | no |
 | [0018](design/0018-explicit-array-carriers.md) | Every op states its array carrier | no |
 | [0019](design/0019-model-residency.md) | How long a loaded model stays resident | no |
+| [0020](design/0020-reproducible-environments.md) | Committed locks, so a rebuild reproduces | no |
+
+## Open items
+
+[OPEN.md](OPEN.md) — known-broken and undecided things without a design yet.
 
 ## Spec
 
