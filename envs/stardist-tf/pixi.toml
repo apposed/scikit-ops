@@ -33,7 +33,7 @@ setuptools = "<81"
 # because skop.host.INIT puts src at sys.path[0]. See
 # docs/spec/fiji-front-end.md; it becomes an ordinary version constraint
 # once scikit-ops is released.
-scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "76c5c45100c2b168931583b44d6168e798260b12" }
+scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "c3de92cf298eb002eb2bad4e0acd6eb037162f4c" }
 stardist = "==0.9.1"
 csbdeep = "*"
 
