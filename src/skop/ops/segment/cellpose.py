@@ -22,7 +22,7 @@ import numpy as np
 from skop import Axes, op, progress
 from skop.types import ImageData, LabelsData
 
-from .._util import to_gray
+from .._util import channel_axis, to_gray
 
 
 @op(env="pytorch")
@@ -44,13 +44,15 @@ def cellpose(
     niter: int = 0,
     min_size: int = 15,
     normalize: bool = True,
+    collapse_channels: bool = False,
     use_gpu: bool = True,
 ) -> LabelsData:
     """Segment cells with Cellpose.
 
     Args:
-        image: Plane to segment. A trailing RGB(A) axis is collapsed. A
-            caller naming its axes may hand this a stack instead.
+        image: Plane to segment. A trailing RGB(A) axis is passed through
+            to CPSAM, which reads up to three channels itself. A caller
+            naming its axes may hand this a stack instead.
         pretrained_model: A CPSAM model finetuned on your own data. Empty
             runs the built-in CPSAM. This must be a CPSAM model, not one
             from Cellpose 3 -- those load in ``cellpose3`` instead, and
@@ -71,6 +73,11 @@ def cellpose(
             faint plane at the top of a volume into a bright one full of
             detections. Turn it off and normalize the volume beforehand when
             that matters; see ``skop.ops.workflows.segment``.
+        collapse_channels: Average a trailing RGB(A) axis to grey before
+            segmenting. Off, because CPSAM takes 1-3 channels in any order
+            and using them beats throwing them away. On is for when one
+            colour is noise the average dilutes -- and for matching
+            ``cellpose3``, which needs the channels named or collapsed.
         use_gpu: Whether to use the GPU, when one is available.
 
     Returns:
@@ -78,7 +85,10 @@ def cellpose(
     """
     from cellpose import models
 
-    gray = to_gray(image)
+    if collapse_channels:
+        plane, axis = to_gray(image), None
+    else:
+        plane, axis = np.asarray(image), channel_axis(image)
 
     # Passed only when set, rather than relying on what the version in this
     # environment treats as "no model" -- it has been None and False.
@@ -92,7 +102,8 @@ def cellpose(
 
     progress("Running Cellpose")
     result = model.eval(
-        gray,
+        plane,
+        channel_axis=axis,
         diameter=diameter if diameter > 0 else None,
         flow_threshold=flow_threshold,
         cellprob_threshold=cellprob_threshold,
