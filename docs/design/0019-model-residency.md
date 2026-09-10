@@ -100,6 +100,43 @@ for weights that no longer exist on disk. A modification time on the weights
 file settles it for the cost of a `stat`, and matters exactly once: retraining
 in place, which is the loop this repo is building.
 
+## Embeddings are the other occupant
+
+Weights are not the only thing worth holding. An interactive segmenter --
+SAM, micro-sam, and whatever follows them -- computes a per-image embedding
+that costs seconds, then answers each click from it in milliseconds. napari-ai-lab
+does this in-process today: `AnnotatorState` holds `image_embeddings` for as
+long as the user is prompting, and a zarr under
+`<project>/embeddings/<image and step>/<model type>` makes a return visit a
+read rather than a recompute. Move that op here and the same state has to
+live somewhere in the worker, for the same reason.
+
+It is not a second copy of the model problem. Four things differ:
+
+- **Keyed by image, not by model.** A hyperslice, in ai-lab's case, named by
+  its position in the stack. The front end owns that name -- where embeddings
+  are cached is project layout, which [0011](0011-deep-learning-training-ops.md)
+  keeps out of the ops -- so what crosses is a path the op is handed, not a
+  layout it knows.
+- **Plural, with locality.** One resident model per op is right because a
+  second one means the user switched. Embeddings are the opposite: a user
+  flips between two slices and back, and one slot makes every flip a reload.
+  What this wants is a small LRU, which is the first thing in this document
+  that a single slot cannot express.
+- **Reload is a read.** Dropping a model costs seconds of recompute to get
+  back. Dropping an embedding costs a zarr read and an upload -- expensive
+  next to a click, cheap next to anything else. When something has to go,
+  this should go first.
+- **Staleness is the same question with a different file.** Keyed on the
+  path alone, a held embedding answers for a zarr that has since been
+  rewritten. The `stat` above settles it here too.
+
+It does not need a session object either, and it is the case that most looks
+like it does. Prompt-to-prompt residency is bounded by one worker lifetime;
+what varies is the key. A dict of embeddings in the op's module, keyed by the
+path the caller passed, is the whole mechanism -- everything hard about it is
+still eviction, and still above the op.
+
 ## Interactions
 
 - **`exclusive`** (`_spec.py:749`) gives an op its own worker. Marking the
@@ -124,6 +161,9 @@ in place, which is the loop this repo is building.
   "free the GPU".
 - Whether a resident model should be dropped on a timer. Probably not — idle
   and finished look identical from inside the process.
+- How many embeddings an interactive op may hold, and who decides. A
+  hard-coded two or three is enough to make flipping between slices instant
+  and is the sort of number nobody can pick correctly in advance.
 - Whether the op-local slot is worth writing before the rest exists. It fixes
   the slicewise reload, which is real today, and nothing above it contradicts
   a single resident model.
