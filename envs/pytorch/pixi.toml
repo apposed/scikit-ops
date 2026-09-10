@@ -11,9 +11,10 @@ version = "0.1.0"
 #
 # Three occupants now: ultralytics for the FastSAM detector, micro_sam for the
 # mask detector of docs/design/0008, and Cellpose, whose own environment this
-# replaced. They resolve together from conda-forge alone, with no PyPI
-# packages at all -- which is the whole premise of this environment, and the
-# reason envs/cellpose is gone rather than maintained alongside it.
+# replaced -- which is why envs/cellpose is gone.
+#
+# Conda-forge alone until Cellpose 4.2, which it does not carry; see
+# [pypi-dependencies].
 #
 # envs/cellpose3 stays separate, and is the exception that shows the rule:
 # Cellpose 4 replaced the v3 model zoo and moved the API with it, so the two
@@ -26,7 +27,6 @@ cuda = "12.0"
 python = "3.11.*"
 numpy = "*"
 ultralytics = ">=8.3"
-cellpose = ">=4"
 # NB: appose is not listed as a conda dependency here, unlike in
 # envs/unseg-cv, and this is temporary. A conda appose does satisfy the
 # pinned scikit-ops' PyPI dependency on it -- but only once the pin is new
@@ -57,6 +57,12 @@ torchvision = "*"
 # and the plain package on Apple Silicon, where MPS comes built in.
 
 [pypi-dependencies]
+# Conda-forge stops at cellpose 4.1.1, and 4.2 is where the DINO models
+# arrived; dinov3 is only on GitHub. Neither pulls a second torch -- pixi maps
+# the conda pytorch onto the `torch` requirement.
+cellpose = ">=4.2"
+dinov3 = { git = "https://github.com/facebookresearch/dinov3" }
+
 # Note: pinned deliberately -- this is part of the environment's identity,
 # so bumping it rebuilds every environment. A checkout still shadows it,
 # because skop.host.INIT puts src at sys.path[0]. See

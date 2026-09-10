@@ -52,22 +52,25 @@ def checkpoint(tmp_path, filename, keys, root="my_model"):
 @pytest.mark.parametrize(
     ("name", "flavor"),
     [
-        ("cpsam", CellposeFlavor.sam),
-        ("cyto3", CellposeFlavor.cpnet),
-        ("nuclei", CellposeFlavor.cpnet),
-        ("cyto2", CellposeFlavor.cpnet),
-        ("CP", CellposeFlavor.cpnet),
+        ("cpsam", CellposeFlavor.cellpose4),
+        ("cyto3", CellposeFlavor.cellpose3),
+        ("nuclei", CellposeFlavor.cellpose3),
+        ("cyto2", CellposeFlavor.cellpose3),
+        ("CP", CellposeFlavor.cellpose3),
     ],
 )
 def test_builtin_names(name, flavor):
     assert cellpose_flavor(name) is flavor
 
 
-def test_cpsam_is_the_only_version_4_builtin():
-    # Cellpose 4 replaced the whole zoo with one model, which is what makes a
-    # name enough to settle the architecture.
-    sam = [n for n, f in BUILTIN_MODELS.items() if f is CellposeFlavor.sam]
-    assert sam == ["cpsam"]
+def test_no_builtin_name_belongs_to_both_versions():
+    # What makes a name enough to settle the version: Cellpose 4 replaced the
+    # zoo rather than adding to it, so the two lists do not overlap. It grew
+    # from one model to four in 4.2 without breaking that.
+    four = {n for n, f in BUILTIN_MODELS.items() if f is CellposeFlavor.cellpose4}
+    three = {n for n, f in BUILTIN_MODELS.items() if f is CellposeFlavor.cellpose3}
+    assert four and three
+    assert not four & three
 
 
 def test_unknown_name_is_reported_as_such():
@@ -77,12 +80,12 @@ def test_unknown_name_is_reported_as_such():
 
 def test_sam_checkpoint(tmp_path):
     path = checkpoint(tmp_path, "mine", CPSAM_KEYS)
-    assert cellpose_flavor(path) is CellposeFlavor.sam
+    assert cellpose_flavor(path) is CellposeFlavor.cellpose4
 
 
 def test_cpnet_checkpoint(tmp_path):
     path = checkpoint(tmp_path, "mine", CPNET_KEYS, root="trained_2024_10_11")
-    assert cellpose_flavor(path) is CellposeFlavor.cpnet
+    assert cellpose_flavor(path) is CellposeFlavor.cellpose3
 
 
 def test_diameter_keys_alone_decide_nothing(tmp_path):
@@ -120,5 +123,5 @@ def test_a_name_beats_a_file_of_that_name(tmp_path, monkeypatch):
     path = checkpoint(tmp_path, "cyto3", CPSAM_KEYS)
     monkeypatch.chdir(tmp_path)
 
-    assert cellpose_flavor("cyto3") is CellposeFlavor.cpnet  # the built-in
-    assert cellpose_flavor(path) is CellposeFlavor.sam  # the file
+    assert cellpose_flavor("cyto3") is CellposeFlavor.cellpose3  # the built-in
+    assert cellpose_flavor(path) is CellposeFlavor.cellpose4  # the file

@@ -5,7 +5,7 @@ Ops are grouped into namespaces by what they do -- ``skop.ops.threshold``,
 it is laid out inside::
 
     from skop.ops.threshold import otsu
-    from skop.ops.segment import cellpose
+    from skop.ops.segment import cellpose4
 
 A namespace whose ops are variations on one call sharing one environment is a
 single module (``threshold.py``). A namespace whose ops span environments and

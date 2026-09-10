@@ -2,14 +2,14 @@
 
 A trained Cellpose model is a bare ``torch.save`` of a state dict under a name
 its author chose, so the file says nothing about which Cellpose it belongs to.
-Handing a Cellpose 3 model to the ``cellpose`` op, or the reverse, fails deep
+Handing a Cellpose 3 model to the ``cellpose4`` op, or the reverse, fails deep
 inside torch with an error about unexpected keys.
 
 The architecture is legible in the key names, though, and a torch checkpoint
 is a zip whose pickled header lists them. Reading that header is a ~50 KB read
 even when the weights beside it are 600 MB, and it needs only the standard
 library -- so the *host* can route a model to the right op before dispatching
-it, which is the point. ``cellpose`` and ``cellpose3`` live in environments
+it, which is the point. ``cellpose4`` and ``cellpose3`` live in environments
 that cannot both exist, and the host has neither.
 
 Built-in models are answered from a name instead, so that a caller with a
@@ -30,24 +30,20 @@ __all__ = ["BUILTIN_MODELS", "CellposeFlavor", "cellpose_flavor"]
 
 
 class CellposeFlavor(Enum):
-    """Which Cellpose architecture a model file was trained on.
+    """Which Cellpose can load a file, and so which op runs it. Not which
+    backbone -- Cellpose 4 picks between its own two, and cannot load a
+    Cellpose 3 model at all."""
 
-    ``sam`` is the ViT-backed CPSAM of Cellpose 4, and runs under the
-    ``cellpose`` op. ``cpnet`` is the U-Net that Cellpose 1 through 3 shared,
-    and runs under ``cellpose3``. The two are not interchangeable.
-    """
-
-    sam = "sam"
-    cpnet = "cpnet"
+    cellpose4 = "cellpose4"
+    cellpose3 = "cellpose3"
 
 
-#: A key prefix that appears in one architecture and not the other. CPSAM's
-#: backbone is a ViT, so every block is under ``encoder.``; CPnet is a U-Net
-#: with a matching ``upsample.up.res_up_*``. ``diam_mean`` and ``diam_labels``
-#: are in both and tell you nothing.
+#: A key prefix in one architecture and not the others. ``diam_mean`` and
+#: ``diam_labels`` are in all of them and tell you nothing.
 _SIGNATURES = (
-    (b"encoder.blocks.", CellposeFlavor.sam),
-    (b"downsample.down.res_down_", CellposeFlavor.cpnet),
+    (b"encoder.blocks.", CellposeFlavor.cellpose4),
+    (b"encoder.cls_token", CellposeFlavor.cellpose4),
+    (b"downsample.down.res_down_", CellposeFlavor.cellpose3),
 )
 
 
@@ -57,7 +53,10 @@ _SIGNATURES = (
 #: zoo, older ``cyto``/``cyto2`` included -- they still load there, and a
 #: published result may name one.
 BUILTIN_MODELS: dict[str, CellposeFlavor] = {
-    "cpsam": CellposeFlavor.sam,
+    "cpsam": CellposeFlavor.cellpose4,
+    "cpsam_v2": CellposeFlavor.cellpose4,
+    "cpdino": CellposeFlavor.cellpose4,
+    "cpdino-vitb": CellposeFlavor.cellpose4,
     **dict.fromkeys(
         (
             "cyto",
@@ -86,7 +85,7 @@ BUILTIN_MODELS: dict[str, CellposeFlavor] = {
             "LC3",
             "LC4",
         ),
-        CellposeFlavor.cpnet,
+        CellposeFlavor.cellpose3,
     ),
 }
 

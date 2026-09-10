@@ -47,7 +47,7 @@ from typing import Annotated, NamedTuple
 from skop import Axes, Choices, ParamsFor, op, progress, run
 from skop.ops.labels import connect
 from skop.ops.normalize import percentile
-from skop.ops.segment.cellpose import cellpose
+from skop.ops.segment.cellpose4 import cellpose4
 from skop.ops.segment.cellpose3 import cellpose3
 from skop.ops.segment.stardist2d import stardist2d_fluo
 from skop.types import ImageData, LabelsData
@@ -81,7 +81,7 @@ def connect_2d_in_3d(
     ] = None,
     segmenter: Annotated[
         Callable,
-        Choices(stardist=stardist2d_fluo, cellpose=cellpose, cellpose3=cellpose3),
+        Choices(stardist=stardist2d_fluo, cellpose4=cellpose4, cellpose3=cellpose3),
     ] = stardist2d_fluo,
     segmenter_args: Annotated[
         dict | None, ParamsFor("segmenter", binds=("image", "normalize"))

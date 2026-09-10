@@ -19,9 +19,13 @@ from __future__ import annotations
 
 import numpy as np
 
+from .cellpose4 import train_cellpose4
+from .cellpose3 import train_cellpose3
 from .stardist2d import receptive_field_stardist2d, train_stardist2d
 
 __all__ = [
+    "train_cellpose4",
+    "train_cellpose3",
     "train_stardist2d",
     "receptive_field_stardist2d",
     "extent",

@@ -1,19 +1,15 @@
-"""Cellpose segmentation, on the CellposeSAM model of version 4.
+"""Cellpose 4 segmentation, on its transformer models.
 
-Ported from src/imgops/implementations/cellpose.py.
+Four models, two backbones: CPSAM and the DINOv3 one added in June 2026.
+Same call and same finetuning for all four, so one op with a model choice.
 
-Runs in the shared 'pytorch' environment rather than one of its own. Cellpose
-4 is a maintained conda package that solves alongside ultralytics and
-micro_sam, so it is exactly the occupant that environment exists for (0002):
-one build, one warm worker, shared by several ops.
-
-Cellpose 3 is the exception, in ``cellpose3.py`` and an environment of its
-own -- version 4 replaced the model zoo and moved the API, so no pin makes
-them coexist.
+Shares the 'pytorch' environment (0002). Cellpose 3 cannot: version 4
+replaced the zoo and moved the API, so it has an environment of its own.
 """
 
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
@@ -25,9 +21,20 @@ from skop.types import ImageData, LabelsData
 from .._util import channel_axis, to_gray
 
 
+class PretrainedModel(Enum):
+    """Cellpose 4's built-ins, newest of each backbone first. cpdino_vitb is
+    ViT-B, about a third the size of the others and cheaper to finetune."""
+
+    cpsam_v2 = "cpsam_v2"
+    cpsam = "cpsam"
+    cpdino = "cpdino"
+    cpdino_vitb = "cpdino-vitb"
+
+
 @op(env="pytorch")
-def cellpose(
+def cellpose4(
     image: Annotated[ImageData, Axes("y", "x", "c?")],
+    model: PretrainedModel = PretrainedModel.cpsam_v2,
     pretrained_model: Path | None = None,
     diameter: Annotated[
         float,
@@ -53,11 +60,13 @@ def cellpose(
         image: Plane to segment. A trailing RGB(A) axis is passed through
             to CPSAM, which reads up to three channels itself. A caller
             naming its axes may hand this a stack instead.
-        pretrained_model: A CPSAM model finetuned on your own data. Empty
-            runs the built-in CPSAM. This must be a CPSAM model, not one
-            from Cellpose 3 -- those load in ``cellpose3`` instead, and
-            ``skop.models.cellpose_flavor`` tells the two apart from the
-            file.
+        model: Which built-in to run. Ignored when ``pretrained_model``
+            is set.
+        pretrained_model: A Cellpose 4 model finetuned on your own data.
+            Empty runs the built-in named by ``model``. It must be a
+            Cellpose 4 model, not one from Cellpose 3 -- those load in
+            ``cellpose3`` instead -- and it carries its own backbone, so
+            ``model`` does not choose one for it.
         diameter: Expected cell diameter in pixels; 0 lets Cellpose estimate.
         flow_threshold: Maximum allowed flow error per mask.
         cellprob_threshold: Cell probability cutoff; lower finds more cells.
@@ -92,16 +101,17 @@ def cellpose(
 
     # Passed only when set, rather than relying on what the version in this
     # environment treats as "no model" -- it has been None and False.
-    weights = {}
+    # Cellpose 4 reads `pretrained_model` as a name or a path.
     if pretrained_model is not None:
-        weights["pretrained_model"] = str(pretrained_model)
+        source = str(pretrained_model)
         progress(f"Loading Cellpose model {Path(pretrained_model).name}")
     else:
-        progress("Loading Cellpose model")
-    model = models.CellposeModel(gpu=use_gpu, **weights)
+        source = model.value
+        progress(f"Loading Cellpose model {source}")
+    net = models.CellposeModel(gpu=use_gpu, pretrained_model=source)
 
     progress("Running Cellpose")
-    result = model.eval(
+    result = net.eval(
         plane,
         channel_axis=axis,
         diameter=diameter if diameter > 0 else None,

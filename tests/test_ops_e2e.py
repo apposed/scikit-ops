@@ -495,10 +495,10 @@ def test_cellpose_sam_segments_round_cells(runner):
     # Guards the environment merge as much as the op: Cellpose 4 moved out of
     # envs/cellpose and into the shared pytorch environment, where it has to
     # coexist with ultralytics and micro_sam.
-    from skop.ops.segment import cellpose
+    from skop.ops.segment import cellpose4
 
     image = coins_like()
-    check_cellpose(runner.run(cellpose, image=image, diameter=0.0), image, 5)
+    check_cellpose(runner.run(cellpose4, image=image, diameter=0.0), image, 5)
 
 
 @pytest.mark.env("cellpose3")
