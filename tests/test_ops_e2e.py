@@ -26,6 +26,16 @@ def runner():
         yield r
 
 
+@pytest.fixture(autouse=True)
+def _release(runner):
+    """Hand back GPU memory after every test. Workers are shared for the
+    module, and without this the later ones run out of it."""
+    yield
+    runner.release()
+    # TensorFlow never hands its slab back, so its worker has to go.
+    runner.release("stardist-tf", close=True)
+
+
 def blobs_2d(size: int = 128, sigma: float = 7.0) -> np.ndarray:
     yy, xx = np.mgrid[0:size, 0:size]
     image = np.zeros((size, size), dtype=np.float32)

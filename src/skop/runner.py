@@ -479,6 +479,43 @@ class Runner:
             _current.reset(ambient)
             _progress._unbind(reporting)
 
+    #: Run in a worker to hand GPU memory back. Torch frees tensors into its
+    #: own cache, not to the driver; cupy does the same. TensorFlow keeps
+    #: what it took either way -- see docs/design/0019.
+    _RELEASE = """
+import gc
+gc.collect()
+try:
+    import torch
+    torch.cuda.empty_cache()
+except Exception:
+    pass
+try:
+    import cupy
+    cupy.get_default_memory_pool().free_all_blocks()
+except Exception:
+    pass
+task.outputs['released'] = True
+"""
+
+    def release(self, env: str | None = None, close: bool = False) -> None:
+        """Give back GPU memory in live workers.
+
+        *env* names one environment, or None for all of them. By default the
+        worker stays up and only returns what it had cached; what an op still
+        references stays held. ``close=True`` shuts the worker down instead,
+        which is the only thing that frees a TensorFlow environment.
+        """
+        for key, service in list(self._services.items()):
+            if env is not None and key[0] != env:
+                continue
+            with contextlib.suppress(Exception):
+                if close:
+                    service.close()
+                    del self._services[key]
+                else:
+                    service.task(self._RELEASE).wait_for()
+
     def close(self) -> None:
         """Shut down every worker this runner started."""
         for service in self._services.values():
