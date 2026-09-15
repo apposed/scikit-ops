@@ -65,15 +65,41 @@ class relay_epochs:
         self._log.propagate = self._propagate
 
 
-def write_history(model_path, history, name: str, dataset_id: str) -> str:
-    """Append this run's epochs to ``<model file>_history.csv``. Columns
-    match ``train_stardist2d``. Rewritten rather than appended: an older
-    file has a shorter header, and wider rows read back wrong."""
+def continued_from(model_path, initial_model: str) -> bool:
+    """Whether this run carried on the model it is about to write.
+
+    True only when ``initial_model`` is the same file as ``model_path``.
+    Starting from a built-in, or from some *other* model of your own, is a new
+    lineage however familiar the name -- the weights do not continue, so
+    neither does the curve.
+    """
+    if not initial_model:
+        return False
+    try:
+        return os.path.samefile(initial_model, model_path)
+    except OSError:
+        # One of them does not exist yet -- the first run writing this name.
+        return os.path.abspath(initial_model) == os.path.abspath(model_path)
+
+
+def write_history(
+    model_path, history, name: str, dataset_id: str, initial_model: str = ""
+) -> str:
+    """Write this run's epochs to ``<model file>_history.csv``. Columns match
+    ``train_stardist2d``. Rewritten rather than appended: an older file has a
+    shorter header, and wider rows read back wrong.
+
+    Kept epochs continue the old ones only when this run continued the old
+    *weights* -- see ``continued_from``. Otherwise the previous history is
+    dropped, because Cellpose has just overwritten the model it described:
+    keeping a curve for weights that no longer exist draws one training run
+    as though it were the tail of another.
+    """
     columns = ["epoch", "loss", "val_loss", "run", "model", "dataset"]
     path = f"{model_path}_history.csv"
 
     previous = []
-    if os.path.exists(path):
+    if continued_from(model_path, initial_model) and os.path.exists(path):
         with open(path) as f:
             previous = list(csv.DictReader(f))
     last_run = int(previous[-1].get("run") or 0) if previous else 0

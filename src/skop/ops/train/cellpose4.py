@@ -60,7 +60,10 @@ def train_cellpose4(
         model: Which built-in to finetune. ``cpdino_vitb`` is the small
             backbone and the one to reach for when the others run the GPU
             out of memory. Ignored when ``initial_model`` is set.
-        initial_model: A model of your own to continue from. Empty starts
+        initial_model: A model of your own to continue from, and what
+            decides whether the history continues or starts over: pass the
+            path this op returned to carry on, leave it empty to start again.
+            Empty starts
             from the built-in named by ``model``, which is the usual thing
             to do -- these are large models and a handful of patches
             finetunes one, where they would not train it from nothing. It
@@ -96,11 +99,18 @@ def train_cellpose4(
     Returns:
         The path of the model file. A ``<model file>_history.csv`` is written
         beside it -- epoch, loss, val_loss, run, model, dataset -- appended to
-        when training continues, so the curve spans every run the model has
-        had.
+        when ``initial_model`` continues this same model, so the curve spans
+        every run the weights have had. Any other run starts the file over,
+        because Cellpose has just overwritten the model the old curve
+        described. To keep both, train the second under a different ``name``.
     """
+    from pathlib import Path
+
     import numpy as np
     from cellpose import models, train
+
+    # Cellpose makes `<model_dir>/models` without parents.
+    Path(model_dir).mkdir(parents=True, exist_ok=True)
 
     X_train, Y_train, X_val, Y_val = read_pairs(images, labels, val_size)
 
@@ -149,5 +159,5 @@ def train_cellpose4(
             model_name=name,
         )
 
-    write_history(model_path, relay.history, name, dataset_id)
+    write_history(model_path, relay.history, name, dataset_id, initial_model)
     return str(model_path)

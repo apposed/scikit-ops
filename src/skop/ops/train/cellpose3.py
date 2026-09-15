@@ -64,7 +64,9 @@ def train_cellpose3(
             specialist trained on your imaging domain starts closer and needs
             fewer patches. Ignored when ``initial_model`` is set.
         initial_model: A model of your own to continue from, which takes
-            precedence over ``model``. It must be a Cellpose 1-3 model, not a
+            precedence over ``model``, and what decides whether the history
+            continues or starts over: pass the path this op returned to carry
+            on, leave it empty to start again. It must be a Cellpose 1-3 model, not a
             CPSAM one; ``skop.models.cellpose_flavor`` tells them apart from
             the file.
         cytoplasm_channel: Which colour the cells are in. Left at
@@ -107,8 +109,10 @@ def train_cellpose3(
     Returns:
         The path of the model file. A ``<model file>_history.csv`` is written
         beside it -- epoch, loss, val_loss, run, model, dataset -- appended to
-        when training continues, so the curve spans every run the model has
-        had.
+        when ``initial_model`` continues this same model, so the curve spans
+        every run the weights have had. Any other run starts the file over,
+        because Cellpose has just overwritten the model the old curve
+        described. To keep both, train the second under a different ``name``.
 
         The mean diameter of the training labels is saved into the model as
         ``diam_labels``. That is what ``skop.ops.segment.cellpose3`` falls
@@ -180,5 +184,5 @@ def train_cellpose3(
             **select,
         )
 
-    write_history(model_path, relay.history, name, dataset_id)
+    write_history(model_path, relay.history, name, dataset_id, initial_model)
     return str(model_path)
