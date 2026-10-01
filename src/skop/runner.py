@@ -14,7 +14,8 @@ import contextvars
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from types import UnionType
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 import appose
 import numpy as np
@@ -23,6 +24,7 @@ from . import _adapt, _codec, _progress, _spec
 from .host import CALL as _CALL
 from .host import INIT as _INIT  # noqa: F401  (kept for out-of-process hosts)
 from .host import init_script as _init_script_for
+from .types import Array
 
 if TYPE_CHECKING:
     from typing import Self
@@ -400,6 +402,7 @@ class Runner:
         call_args = dict(args or {})
         call_args.update(kwargs)
         _validate(spec, call_args)
+        call_args = _to_declared(spec, call_args)
 
         if spec.is_workflow:
             # No environment to dispatch to, and nothing to encode: a workflow
@@ -543,6 +546,39 @@ def _validate(spec: _spec.OpSpec, args: dict) -> None:
         raise TypeError(
             f"Op {spec.name} is missing required argument(s): {', '.join(missing)}"
         )
+
+
+def _to_declared(spec: _spec.OpSpec, args: dict) -> dict:
+    """If a param isn't a numpy array but the op wants one, convert it.
+
+    The whole array is read into memory (see docs/design/0017).
+    """
+    converted = dict(args)
+    for param in spec.params:
+        value = args.get(param.name)
+        if isinstance(value, np.ndarray) or not isinstance(value, Array):
+            continue
+        if not _wants_numpy(param.type, value):
+            continue
+        if param.direction is not None:
+            raise TypeError(
+                f"Op {spec.name}: {param.name} is written to, so it must be "
+                f"numpy, not {type(value).__name__}"
+            )
+        converted[param.name] = np.asarray(value)
+    return converted
+
+
+def _wants_numpy(annotation: Any, value: Any) -> bool:
+    """Does the annotation need numpy? Not if it also accepts *value* as is."""
+    if get_origin(annotation) in (Union, UnionType):
+        members = [_spec._strip(a) for a in get_args(annotation)]
+    else:
+        members = [annotation]
+    members = [get_origin(m) or m for m in members]  # NDArray[...] -> ndarray
+    if np.ndarray not in members:
+        return False
+    return not any(isinstance(m, type) and isinstance(value, m) for m in members)
 
 
 def _adaptations(

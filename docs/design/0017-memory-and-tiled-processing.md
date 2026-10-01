@@ -137,6 +137,9 @@ Everything. In rough order of what to settle first:
   advertise it does internally.
 - Whether the multiplier is measured or declared. Declared is a guess that
   drifts; measured needs a benchmark that runs somewhere.
+- How a zarr or dask input reaches a numpy op. The runner reads it whole
+  today (`_to_declared` in `runner.py`); with a declaration it could read it
+  a chunk at a time instead.
 
 ## Related
 
