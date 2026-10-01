@@ -1,7 +1,7 @@
 # 0018 — Explicit array carriers
 
-**Status:** proposed. Nothing built. Touches every op signature, which is why
-it is written down before anyone starts.
+**Status:** partly built. `ImageOf`, its siblings and `Array` are in
+`skop.types`; ops still write `ImageData`, and nothing converts by carrier.
 
 ## The problem
 
