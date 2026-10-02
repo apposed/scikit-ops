@@ -69,3 +69,9 @@ pixi/tnia-dev/
 
 # Claude Code local settings
 .claude/
+
+# Written by notebooks/icechunk: the sample image, its repo and the run log
+notebooks/icechunk/data/
+
+# Sample images, unpacked into test_images/; large, never committed
+test_images.zip
