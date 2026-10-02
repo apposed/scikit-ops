@@ -24,6 +24,7 @@ from . import _adapt, _codec, _progress, _spec
 from .host import CALL as _CALL
 from .host import INIT as _INIT  # noqa: F401  (kept for out-of-process hosts)
 from .host import init_script as _init_script_for
+from .record import Record, Recorder
 from .types import Array
 
 if TYPE_CHECKING:
@@ -139,12 +140,15 @@ class Runner:
         root: Path | str | None = None,
         envs_dir: Path | str | None = None,
         debug: bool = False,
+        recorder: Recorder | None = None,
     ) -> None:
         self.root = Path(root).resolve() if root else _default_root()
         self.envs_dir = (
             Path(envs_dir).resolve() if envs_dir else _default_envs_dir(self.root)
         )
         self.debug = debug
+        #: Records each run when set; see skop.record. None records nothing.
+        self.recorder = recorder
         self._services: dict[tuple, Any] = {}
         self._envs: dict[tuple, Any] = {}
         self._build_progress: list[Callable[[str, int, int], None]] = []
@@ -367,6 +371,7 @@ class Runner:
         position: dict[str, int] | None = None,
         on_progress: Callable[[Any], None] | None = None,
         on_start: Callable[[Any], None] | None = None,
+        record_as: str | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run an op in its environment and return its result.
@@ -397,11 +402,14 @@ class Runner:
                 cancel one -- a GUI, typically -- needs a handle on it from
                 another thread. Waiting for the first progress event instead
                 would leave silent ops uncancellable.
+            record_as: Name the recorder saves this run under; defaults to
+                the op's function name. Ignored with no recorder.
         """
         spec = _spec.spec(fn)
         call_args = dict(args or {})
         call_args.update(kwargs)
         _validate(spec, call_args)
+        given = call_args  # the originals, for the recorder
         call_args = _to_declared(spec, call_args)
 
         if spec.is_workflow:
@@ -409,7 +417,8 @@ class Runner:
             # runs here, and the ops it calls each cross the boundary
             # themselves. Axis adaptation is skipped for the same reason --
             # the sub-ops adapt their own arrays.
-            return self._run_here(fn, call_args, on_progress, on_start)
+            result = self._run_here(fn, call_args, on_progress, on_start)
+            return self._record(spec, given, result, record_as)
 
         adaptations = _adaptations(fn, call_args, axes, plans, position)
 
@@ -459,9 +468,23 @@ class Runner:
                 # the worker allocated for results.
                 _codec.release(out_refs, unlink=True)
 
-            return _unpack(spec, outputs, buffers)
+            result = _unpack(spec, outputs, buffers)
         finally:
             _codec.release(refs, unlink=True)
+        return self._record(spec, given, result, record_as)
+
+    def _record(self, spec, args: dict, result: Any, name: str | None) -> Any:
+        """Hand a finished run to the recorder, if there is one."""
+        if self.recorder is None:
+            return result
+        arrays = {k: v for k, v in args.items() if _is_array(v)}
+        params = {k: _codec.encode(v, []) for k, v in args.items() if k not in arrays}
+        inputs = {k: self.recorder.identify(v) for k, v in arrays.items()}
+        return self.recorder.save(name or spec.function, spec.name, params, inputs, result)
+
+    def log(self, name: str) -> list[Record]:
+        """Past runs recorded as ``name``, newest first; empty with no recorder."""
+        return self.recorder.log(name) if self.recorder else []
 
     def _run_here(
         self,
@@ -579,6 +602,10 @@ def _wants_numpy(annotation: Any, value: Any) -> bool:
     if np.ndarray not in members:
         return False
     return not any(isinstance(m, type) and isinstance(value, m) for m in members)
+
+
+def _is_array(value: Any) -> bool:
+    return hasattr(value, "shape") and hasattr(value, "dtype")
 
 
 def _adaptations(
