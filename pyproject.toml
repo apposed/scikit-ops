@@ -36,6 +36,15 @@ dependencies = [
     "numpy",
 ]
 
+[project.optional-dependencies]
+# Runner(recorder=IcechunkRecorder(repo)): keep every result, like git for images.
+# icechunk needs Python 3.11+, so on 3.10 the extra installs nothing.
+icechunk = [
+    "icechunk>=1.0; python_version >= '3.11'",
+    "zarr>=3; python_version >= '3.11'",
+    "scikit-image; python_version >= '3.11'",
+]
+
 [dependency-groups]
 dev = [
     "build",

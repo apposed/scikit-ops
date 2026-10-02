@@ -7,6 +7,8 @@
 Implemented so far
 
 - ``TextRecorder``: one JSON line per run, standard library only
+- ``IcechunkRecorder`` (``skop.icechunk_recorder``): the recipe plus the
+  result image, as an Icechunk commit
 
 Recording happens here in the host, never in the op's environment.
 """
