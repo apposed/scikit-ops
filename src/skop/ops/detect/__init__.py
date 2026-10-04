@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from ._result import Boxes
 from .fastsam import fastsam
+from .jdll_yolo import jdll_yolo
 from .object_aware_yolo import object_aware_yolo
 
-__all__ = ["Boxes", "fastsam", "object_aware_yolo"]
+__all__ = ["Boxes", "fastsam", "jdll_yolo", "object_aware_yolo"]
