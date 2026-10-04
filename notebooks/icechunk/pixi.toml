@@ -1,0 +1,23 @@
+[workspace]
+# The host for the Icechunk notebook only. Kept apart from pixi/examples so
+# the main examples environment does not carry icechunk and zarr.
+# Ops still run in their own environments under envs/, built on first use.
+name = "skop-icechunk"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+
+[dependencies]
+python = "3.12.*"
+icechunk = ">=1.0"
+zarr = ">=3"
+scikit-image = "*"
+tifffile = "*"
+matplotlib = "*"
+ipykernel = "*"
+
+[pypi-dependencies]
+scikit-ops = { path = "../..", editable = true }
+
+[tasks]
+# Register the environment as a Jupyter kernel for use in VS Code and Jupyter
+register-kernel = "python -m ipykernel install --user --name=skop-icechunk --display-name 'skop (icechunk)'"
