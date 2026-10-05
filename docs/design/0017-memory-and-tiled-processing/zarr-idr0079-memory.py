@@ -3,7 +3,7 @@
 # dependencies = ["scikit-ops", "zarr>=3", "scikit-image"]
 #
 # [tool.uv.sources]
-# scikit-ops = { path = "../..", editable = true }
+# scikit-ops = { path = "../../..", editable = true }
 # ///
 """Run a skop op on a zarr with too little memory, and watch it fail
 
@@ -31,10 +31,10 @@ converts to numpy too, and to float64, twice skop's float32. Run in this
 process, a failure kills the script itself, so the shell prints "Killed"
 rather than FAIL.
 
-uv run docs/spec/zarr-idr0079-memory.py                 # gaussian, 1G cap
-uv run docs/spec/zarr-idr0079-memory.py frangi
-uv run docs/spec/zarr-idr0079-memory.py gaussian --cap none
-uv run docs/spec/zarr-idr0079-memory.py --skimage --cap none
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py  # gaussian, 1G cap
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py frangi
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py gaussian --cap none
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py --skimage --cap none
 """
 
 import argparse
@@ -59,7 +59,7 @@ OPS = {
     "frangi": (frangi, {"sigma_min": 2.0, "sigma_max": 2.0}),
 }
 URL = "https://livingobjects.ebi.ac.uk/idr/zarr/v0.3/idr0079A/9836998.zarr"
-LOCAL = Path(__file__).resolve().parents[2] / "test_images" / "idr0079A-9836998.zarr"
+LOCAL = Path(__file__).resolve().parents[3] / "test_images" / "idr0079A-9836998.zarr"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("op", nargs="?", default="gaussian", choices=OPS)

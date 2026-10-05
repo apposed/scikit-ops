@@ -12,7 +12,7 @@ can be checked against a whole-array one; hela then shows it scales.
 Copies the chunk files as they are, all six levels and the labels, so the
 local copy is the same OME-Zarr (v0.3, zarr v2) as the remote one.
 
-uv run docs/spec/zarr-idr0079-download.py
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-download.py
 
 Already copied chunks are skipped, so it can be rerun after a stop.
 """
@@ -28,7 +28,7 @@ from math import ceil
 from pathlib import Path
 
 URL = "https://livingobjects.ebi.ac.uk/idr/zarr/v0.3/idr0079A/9836998.zarr"
-OUT = Path(__file__).resolve().parents[2] / "test_images" / "idr0079A-9836998.zarr"
+OUT = Path(__file__).resolve().parents[3] / "test_images" / "idr0079A-9836998.zarr"
 
 
 def fetch(key, tries=5):

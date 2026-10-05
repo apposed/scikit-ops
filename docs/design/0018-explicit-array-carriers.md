@@ -165,7 +165,7 @@ checker, the codec and a notebook caller are all unaffected.
 
 ## Related
 
-- [0017](0017-memory-and-tiled-processing.md) — the other declaration an op
+- [0017](0017-memory-and-tiled-processing/) — the other declaration an op
   owes its caller. zarr and dask carriers are usually lazy or out-of-core,
   which is 0017's problem arriving from the other direction.
 - [0003](0003-semantic-roles.md) — what `Role` is and why skop never guesses.

@@ -8,6 +8,9 @@ unnumbered proposals. Both are in use.
 docs/design/NNNN-*.md   Numbered, permanent. Status says implemented,
                         proposed, or placeholder. A proposal is amended in
                         place as it is built, not moved.
+docs/design/NNNN-*/     The same, as a directory: README.md, the design, its
+                        background notes and its test scripts together.
+                        Trying this on 0017 only.
 docs/spec/*.md          Unnumbered proposals.
 ```
 
@@ -42,7 +45,7 @@ load-bearing.
 | [0014](design/0014-make-decon-ops.md) | Richardson-Lucy and the Gaussian PSF | part: no OpenCL |
 | [0015](design/0015-augment-ops.md) | Augmentation as its own kind of op | no, behind 0011 |
 | [0016](design/0016-choosing-an-environment.md) | Which environment a new op declares | yes, a rule in force |
-| [0017](design/0017-memory-and-tiled-processing.md) | Memory declarations and tiling | no |
+| [0017](design/0017-memory-and-tiled-processing/) | Memory declarations and tiling | no |
 | [0018](design/0018-explicit-array-carriers.md) | Every op states its array carrier | no |
 | [0019](design/0019-model-residency.md) | How long a loaded model stays resident | no |
 | [0020](design/0020-reproducible-environments.md) | Committed locks, so a rebuild reproduces | no |

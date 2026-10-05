@@ -10,7 +10,7 @@ Functions that call np.asarray first work, but could explode memory and fail
 
 Functions that do not convert to numpy can fail when calling numpy methods (copy, reshape)
 
-uv run docs/spec/zarr-skimage.py
+uv run docs/design/0017-memory-and-tiled-processing/zarr-skimage.py
 
 The coins image is written to an icechunk repository in a temporary
 directory, which is deleted at the end.

@@ -143,7 +143,7 @@ still eviction, and still above the op.
   training op exclusive makes this *worse*, not better — two live processes,
   both wanting the GPU — unless releasing the predict worker comes first.
   Exclusivity separates ops; it does not sequence them.
-- **[0017](0017-memory-and-tiled-processing.md)** already names model weights
+- **[0017](0017-memory-and-tiled-processing/)** already names model weights
   as memory that does not shrink with the tile, which is what its `fixed`
   field is for. A budget that ignores a resident model from an earlier call is
   computing against the wrong free-memory number.

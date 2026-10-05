@@ -8,8 +8,8 @@
 # ]
 #
 # [tool.uv.sources]
-# scikit-ops = { path = "../..", editable = true }
-# skop-napari = { path = "../../../skop-napari", editable = true }
+# scikit-ops = { path = "../../..", editable = true }
+# skop-napari = { path = "../../../../skop-napari", editable = true }
 # ///
 """Open one zarr layer in napari, with the skop plugin, and a memory cap
 
@@ -25,14 +25,16 @@ one from a script.
 
 --cap starts napari again under systemd-run, in a scope whose limit
 covers napari and the skop workers it starts. The memory in use is printed
-once the viewer is up; the cap needs room above that for the input to be
-copied for the worker (~2x the input, ~350 MB), and then not enough for
-the op (gaussian ~8x more, ~1.5 GB; frangi ~18x, ~3 GB), so that the op
-is what fails and not the copy. Untested; tune the cap from the printed
-number.
+once the viewer is up.
 
-uv run docs/spec/zarr-idr0079-napari.py
-uv run docs/spec/zarr-idr0079-napari.py --cap 3G
+When the scope runs out, the kernel kills the biggest process in it, not
+the one asking for memory. With --cap 3G and gaussian, the worker was
+inside the op, but napari was killed first and the window just closed.
+Seeing the op fail while napari survives needs a cap on the worker alone,
+which this script cannot do.
+
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-napari.py
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-napari.py --cap 3G
 """
 
 import argparse
@@ -43,7 +45,7 @@ from pathlib import Path
 import napari
 import zarr
 
-IMAGES = Path(__file__).resolve().parents[2] / "test_images"
+IMAGES = Path(__file__).resolve().parents[3] / "test_images"
 FULL = IMAGES / "idr0079A-9836998.zarr"
 MEMBRANE = IMAGES / "idr0079A-membrane.zarr"
 

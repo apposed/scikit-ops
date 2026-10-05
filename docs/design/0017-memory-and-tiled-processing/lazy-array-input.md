@@ -2,27 +2,29 @@
 
 Status: proposed. Nothing here is built.
 
+Background for case 1 of [0017](README.md): the input is lazy and too big
+for RAM. The decision is summarised in [design.md](design.md); this is the
+alternatives and the proxy in detail.
+
 ## The problem
 
-Only numpy (through shared memory) and plain JSON cross into a worker. 
+Only numpy (through shared memory) and plain JSON cross into a worker. A
+zarr, dask or xarray array depends on things that exist only in the host: a
+store and its codecs, a task graph, GPU memory. The op environment may not
+have zarr at all.
 
-A zarr,
-dask or xarray array depends on things that exist only in the host: a store
-and its codecs, a task graph, GPU memory. The op environment may not have zarr
-at all.
-
-Current situation: runner converts any non-numpy input to numpy before sending
+Today the runner converts any non-numpy input to numpy before sending
 (`runner.py`, `np.asarray`), and `_codec` then copies it into shared memory.
-
-two full copies at peak??
-- array must fit in RAM.
+So the whole array must fit in RAM, and probably twice over at the peak:
+the numpy copy and the shared-memory copy. Not yet measured.
 
 ## Four approaches
 
 1. **Convert to numpy, optionally in chunks.** Today's behaviour, plus
    chunking driven by `PeakMemory` and overlap (below). Works for any op.
-   Global ops cannot be chunked: Otsu on each chunk picks a different
-   threshold per chunk, so the mask shows seams at chunk edges. A niche
+   Global ops change when chunked: Otsu on each chunk picks a different
+   threshold per chunk, so the mask shows seams at chunk edges -- adaptive
+   thresholding, wanted or not, so the runner warns. A niche
    workaround is two passes: compute the threshold once (from a lower
    multiscale level, or a histogram built chunk by chunk), then apply it to
    each chunk at full resolution.
@@ -41,43 +43,29 @@ two full copies at peak??
    when the proxy has a bug, or is waiting on a fix, the ops are still a
    collection of plain functions, and work can continue.
 
-##  Templated annotation
+## The annotation says which
 
-  ie ImageOf[T]
- 
-- `ImageOf[np.ndarray]`: Op expresses it needs numpy. By default op converts all of it up front.  
-  
-  Proposed:  op optionally declares `PeakMemory` (0017), the runner uses
-  it to chunk the input instead of converting the whole array at once.
-- 
-`ImageOf[Array]`: the op expresses it can operate on more general array. It gets a `LazyArray` proxy
-  that fetches chunks from the host on demand.
+`ImageOf[T]` says what array the op takes:
 
-An op that explicitly calls `np.asarray(image)` should instead declare type is `ImageOf[np.ndarray]`.
-Then the runner can handle the conversion (possibly with chunking).  
+- `ImageOf[np.ndarray]`: the op needs numpy. The runner converts the whole
+  input up front, or, if the op declares `PeakMemory`, tile by tile.
+- `ImageOf[Array]`: the op can work on a more general array. It gets a
+  `LazyArray` proxy that fetches chunks from the host on demand.
 
-If op is passed a lazy `Array` we could raise an error but that error checking should be up to op.
-For example op could be run outside of runner, so could still have option of error checking itself.  
+An op that calls `np.asarray(image)` itself should instead declare
+`ImageOf[np.ndarray]`, so the runner can do the conversion, and tile it.
 
+If an op is passed a lazy `Array` it cannot handle, raising an error is the
+op's job, not the runner's: the op can be called outside the runner too, so
+it keeps its own checks.
 
-## Chunking consideration:
+## Chunking
 
-- Pixel-wise ops (scaling, a fixed threshold) chunk freely.
-- Neighbourhood ops (filters, morphology, deconvolution) need chunks that
-  overlap by the kernel radius, with the overlap trimmed off afterwards.
-  `PeakMemory` does not say how much overlap that is.
-- Global ops (Otsu, normalising by min and max, histograms) give a
-  different answer on each chunk. They cannot be chunked.
-- Labelling and segmentation split objects at chunk edges, so labels
-  repeat and need stitching. Detectors find boxes twice in the overlap.
-- A model trained at one scale may see too little context in a small chunk.
-- Some axes must stay whole, such as channels or z for a 3D model.
+What happens to each kind of op when it is chunked -- overlap, global ops,
+labels, detectors, axes that stay whole -- is the same as for any tiling,
+and is in [design.md](design.md).
 
-Alongside `PeakMemory` op also needs to declare overlap.
-
-
-
-## Cross environment lazy array approach
+## Cross-environment lazy array
 
 All in skop's `_codec`; Appose is unchanged.
 
