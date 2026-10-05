@@ -51,6 +51,7 @@ sharing an environment also share a warm worker process, unless one asks for
 | `skop.ops.segment.unseg:unseg` | `unseg-cv` | Unsupervised nuclei + cells |
 | `skop.ops.detect.fastsam:fastsam` | `pytorch` | Class-agnostic boxes, via FastSAM |
 | `skop.ops.detect.object_aware_yolo:object_aware_yolo` | `segment-everything` | Class-agnostic boxes, via MobileSAMv2 |
+| `skop.ops.detect.yolo:yolo` | `pytorch` | Tiled YOLO detection, with automatic GPU batching, confidences and classes |
 | `skop.ops.toy:*` | `minimal` | Exercises for skop itself |
 
 Those are the fully qualified op IDs, as `discover()` reports them. Callers
@@ -79,6 +80,30 @@ import skop
 
 specs, failures = skop.discover()
 ```
+
+For a large image and a YOLO `.pt` model:
+
+```python
+from pathlib import Path
+from skop.ops.detect import yolo
+
+with skop.Runner() as runner:
+    found = runner.run(
+        yolo, image=image, weights=Path("best.pt"),
+        object_size=100, overlap=0.15, gpu_fraction=0.9,
+    )
+# found.boxes: [min_y, min_x, max_y, max_x]
+# found.confidences and found.classes: one value per box
+```
+
+`object_size` is area in pixels²; `None` runs the whole image once. Areas
+outside 0.1%-50% of the image select square tiles with side
+`ceil(sqrt(1.5 * object_size / 0.001))`. Input size comes from the checkpoint.
+Tiles align with the image edges, and class-aware suppression removes duplicate
+and truncated boxes, preferring boxes seen whole in an overlapping tile.
+GPU batches use the measured single-tile memory cost and shrink on an
+out-of-memory error. CUDA has a peak counter; MPS uses sampled driver memory.
+The image must fit in host RAM; only the current resized batch enters the GPU.
 
 ## Writing an op
 

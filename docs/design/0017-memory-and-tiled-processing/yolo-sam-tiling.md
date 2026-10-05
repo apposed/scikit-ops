@@ -1,7 +1,15 @@
 # Tiling for YOLO and SAM
 
-Status: notes, nothing built. Started from reading JDLL's `DetectionMerger`
+Status: detector tiling built; runner-level tiling and SAM remain proposals.
+Started from reading JDLL's `DetectionMerger`
 ([jdll-reuse.md](../../spec/jdll-reuse.md)).
+
+Update: `skop.ops.detect.yolo:yolo` implements detector tiling locally to
+the op, with object area, configurable overlap, checkpoint input size and
+measured GPU batching. It shifts boxes into image coordinates and suppresses
+same-class duplicates using intersection over the smaller box, preferring
+whole boxes over fragments on internal tile edges. The general runner design
+and tiled SAM below remain proposals.
 
 **Tiling is not optional for detectors.** There are two separate reasons to
 tile, and only the first one is about memory.

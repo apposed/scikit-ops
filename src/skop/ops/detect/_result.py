@@ -1,6 +1,6 @@
-"""What every box detector returns.
+"""Return types for box detectors.
 
-One class, shared by every detector op, so that "these ops are substitutable"
+``Boxes`` is shared by the class-agnostic ops, so "these ops are substitutable"
 is a fact rather than a convention -- a workflow choosing between them gets
 the same fields and the same output names either way.
 
@@ -29,3 +29,15 @@ from skop.types import BoxesData
 class Boxes(NamedTuple):
     #: (N, 4) as [min_y, min_x, max_y, max_x], in image coordinates.
     boxes: BoxesData
+
+
+class Detections(NamedTuple):
+    """Classified boxes, with one confidence and class ID per row.
+
+    Lists keep per-object values out of image layers until skop has a
+    features role (docs/spec/per-object-features.md).
+    """
+
+    boxes: BoxesData
+    confidences: list[float]
+    classes: list[int]
