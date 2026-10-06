@@ -8,9 +8,9 @@ living in the op's declared environment.
 
 from __future__ import annotations
 
-import json
 import contextlib
 import contextvars
+import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 import appose
 import numpy as np
 
-from . import _adapt, _codec, _progress, _spec
+from opspec.tiling import TilePlan, plan_tiles
+
+from . import _adapt, _codec, _progress, _spec, _tiling
 from .host import CALL as _CALL
 from .host import INIT as _INIT  # noqa: F401  (kept for out-of-process hosts)
 from .host import init_script as _init_script_for
@@ -367,6 +369,7 @@ class Runner:
         position: dict[str, int] | None = None,
         on_progress: Callable[[Any], None] | None = None,
         on_start: Callable[[Any], None] | None = None,
+        memory: int | str | None = None,
         **kwargs: Any,
     ) -> Any:
         """Run an op in its environment and return its result.
@@ -397,11 +400,38 @@ class Runner:
                 cancel one -- a GUI, typically -- needs a handle on it from
                 another thread. Waiting for the first progress event instead
                 would leave silent ops uncancellable.
+            memory: A memory budget for the op, as bytes or a size such as
+                ``"1G"``. An op declaring tiling hints (``@op(tile=...,
+                peak_memory=...)``) whose input would need more is run tile by
+                tile, each within the budget; see ``skop._tiling``. An op
+                declaring none runs whole, as without a budget.
         """
         spec = _spec.OpSpec.from_op(fn)
         call_args = dict(args or {})
         call_args.update(kwargs)
         _validate(spec, call_args)
+
+        if memory is not None and spec.tile and spec.peak_memory:
+            plan = _tile_plan(spec, call_args, memory)
+            if plan.calls > 1:
+                if axes or plans:
+                    raise NotImplementedError(
+                        f"Op {spec.name}: tiling and axis adaptation in one call "
+                        "are not supported yet; give one or the other"
+                    )
+                name = spec.tile[0]
+
+                def one_tile(piece: np.ndarray) -> Any:
+                    return self.run(
+                        fn,
+                        {**call_args, name: piece},
+                        variant=variant,
+                        on_progress=on_progress,
+                        on_start=on_start,
+                    )
+
+                return _tiling.run_tiles(one_tile, call_args[name], plan)
+
         call_args = _to_declared(spec, call_args)
 
         if spec.is_workflow:
@@ -546,6 +576,25 @@ def _validate(spec: _spec.OpSpec, args: dict) -> None:
         raise TypeError(
             f"Op {spec.name} is missing required argument(s): {', '.join(missing)}"
         )
+
+
+def _tile_plan(spec: _spec.OpSpec, args: dict, memory: int | str) -> TilePlan:
+    """How to cut this call to fit *memory*, from the op's tiling hints."""
+    if spec.merge not in (None, "crop"):
+        raise NotImplementedError(
+            f"Op {spec.name}: merging tiles by {spec.merge!r} is not implemented; "
+            "only 'crop' is"
+        )
+    if len(spec.tile) != 1:
+        raise NotImplementedError(
+            f"Op {spec.name}: tiling {len(spec.tile)} inputs together is not "
+            "implemented yet; one is"
+        )
+    image = args[spec.tile[0]]
+    values = {p.name: p.default for p in spec.params if not p.required}
+    values.update(args)
+    overlap = spec.overlap.resolve(values) if spec.overlap else 0
+    return plan_tiles(image.shape, image.dtype, spec.peak_memory, memory, overlap)
 
 
 def _to_declared(spec: _spec.OpSpec, args: dict) -> dict:
