@@ -47,7 +47,7 @@ Big 2D with YOLO, case 4: EM (idr0083, 23k x 36k at level 2) or aerial
 uv run $D/yolo-download.py aerial                    # or em
 uv run $D/yolo-run.py aerial --level 4               # a coarse level, whole
 uv run $D/yolo-run.py aerial --level 2 --tile 1024   # a fine level, tiled
-uv run $D/yolo-napari.py aerial                      # levels as layers, FastSAM ready
+uv run $D/yolo-napari.py aerial                      # levels as layers, YOLO ready
 ```
 
 ## Files
@@ -68,5 +68,5 @@ Everything for this design lives in this directory, until it is built:
 | `yolo_data.py` | Where the two big 2D images live; imported by the `yolo-*.py` scripts |
 | `yolo-download.py` | Makes `test_images/yolo-{em,aerial}.zarr`, one 2D array per level |
 | `yolo-run.py` | FastSAM or JDLL YOLO on one level, whole or tiled; box counts and sizes |
-| `yolo-napari.py` | Several levels as aligned layers, with the skop panel on FastSAM |
+| `yolo-napari.py` | Several levels as aligned layers, with the skop panel on YOLO |
 

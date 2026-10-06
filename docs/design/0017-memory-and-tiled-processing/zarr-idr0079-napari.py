@@ -13,9 +13,11 @@
 # ///
 """Open one zarr layer in napari, with the skop plugin, and a memory cap
 
-One layer, the membrane channel of idr0079A/9836998: z,y,x = 142 x 788 x
-1584 uint8, 177 MB, as a plain zarr array -- no pyramid, no channels, no
-labels. The first run makes it, test_images/idr0079A-membrane.zarr, from
+One layer, the membrane channel of idr0079A/9836998, at pyramid level 1 by
+default: z,y,x = 142 x 394 x 792 uint8, 44 MB (level 0 is 142 x 788 x 1584,
+177 MB; --level 0 for that). A plain zarr array -- no pyramid, no channels,
+no labels. The first run makes it, test_images/idr0079A-membrane.zarr for
+level 0 and idr0079A-membrane-L<level>.zarr for the others, from
 the copy zarr-idr0079-download.py or zarr-idr0079-memory.py leaves in
 test_images/; run one of those first.
 
@@ -35,6 +37,7 @@ which this script cannot do.
 
 uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-napari.py
 uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-napari.py --cap 3G
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-napari.py --level 0
 """
 
 import argparse
@@ -47,11 +50,17 @@ import zarr
 
 IMAGES = Path(__file__).resolve().parents[3] / "test_images"
 FULL = IMAGES / "idr0079A-9836998.zarr"
-MEMBRANE = IMAGES / "idr0079A-membrane.zarr"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--cap", default="none", help="memory cap, e.g. 3G, or none")
+parser.add_argument("--level", default="1", help="pyramid level, 0 is full size")
 args = parser.parse_args()
+# level 0 keeps the name it had before there was a choice
+MEMBRANE = IMAGES / (
+    "idr0079A-membrane.zarr"
+    if args.level == "0"
+    else f"idr0079A-membrane-L{args.level}.zarr"
+)
 
 if "SKOP_MEMORY_SCOPE" not in os.environ:
     # Made before the cap, so the copy isn't counted against it.
@@ -60,9 +69,9 @@ if "SKOP_MEMORY_SCOPE" not in os.environ:
             sys.exit(f"No copy at {FULL}; run zarr-idr0079-download.py first")
         source = zarr.open_group(FULL, mode="r")
         window = source.attrs["omero"]["channels"][0]["window"]
-        plane = source["0"].shape[-2:]
-        # c,z,y,x at level 0; channel 0 is the membrane
-        z = zarr.create_array(MEMBRANE, data=source["0"][0], chunks=(1, *plane))
+        plane = source[args.level].shape[-2:]
+        # c,z,y,x; channel 0 is the membrane
+        z = zarr.create_array(MEMBRANE, data=source[args.level][0], chunks=(1, *plane))
         z.attrs["contrast_limits"] = [window["start"], window["end"]]
         print(f"made {MEMBRANE}")
 

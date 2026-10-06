@@ -6,9 +6,10 @@ proposes. The parameter annotations are the kind skop has today -- `ImageOf`,
 that syntax exists yet; it is a sketch to argue with. The numbers are counted
 from the code, and want measuring.
 
-Today `gaussian` and `jdll_yolo` take `ImageData` and the decon op a bare
-`np.ndarray`; they are written here as `ImageOf[np.ndarray]`, where skop is
-heading.
+Today `gaussian` and `yolo` take `ImageData` and the decon op a bare
+`np.ndarray`. Gaussian and decon are written here as `ImageOf[np.ndarray]`,
+where skop is heading. YOLO is shown as it is, then as `ImageOf[Array]`,
+because it slices its input itself and never needs all of it as numpy.
 
 The two halves answer different questions. The annotations say what each
 value *is*: an image, which axes the op takes, what range a number has. The
@@ -94,38 +95,61 @@ def richardson_lucy_cupy(
 - **Real image edges** get no overlap, and `noncirc` handles them; the
   runner must not reflect-pad there.
 
-## YOLO: a detector, tiled for scale
+## YOLO: a detector that tiles itself
 
-`skop.ops.detect.jdll_yolo` (env `pytorch`).
+`skop.ops.detect.yolo` (env `pytorch`). Unlike the two above, the op does
+the tiling, so it can batch tiles through the model (design.md, "Ops that
+tile themselves"). Its signature today:
 
 ```python
-@op(env="pytorch", tile="image",
-    native_size="imgsz",
-    peak_memory=PeakMemory(scale=6, dtype=np.uint8, fixed=MEASURED),  # scale a guess
-    merge=merge_boxes)
-def jdll_yolo(
-    image: Annotated[ImageOf[np.ndarray], Axes("y", "x", "c?")],
+@op(env="pytorch")
+def yolo(
+    image: Annotated[ImageData, Axes("y", "x", "c?")],
     weights: Path,
-    conf: Annotated[float, {"widget_type": "FloatSlider", "min": 0.0, "max": 1.0}] = 0.25,
-    iou: Annotated[float, {"widget_type": "FloatSlider", "min": 0.0, "max": 1.0}] = 0.7,
-    imgsz: Annotated[int, {"min": 32, "step": 32}] = 640,
-) -> Boxes: ...
+    object_size: float | None = None,
+    overlap: Annotated[float, {"min": 0.0, "max": 0.95}] = 0.15,
+    gpu_fraction: Annotated[float, {"min": 0.01, "max": 1.0}] = 0.9,
+    conf: Annotated[float, {"min": 0.0, "max": 1.0}] = 0.25,
+    iou: Annotated[float, {"min": 0.0, "max": 1.0}] = 0.5,
+    max_det: int = 300,
+    merge_threshold: Annotated[float, {"min": 0.0, "max": 1.0}] = 0.5,
+) -> Detections: ...
 ```
 
+- **Nothing on `@op` but the environment.** No `overlap`, `peak_memory` or
+  `merge`: the tiling is the op's own, so the runner has nothing to tile it
+  with and runs it whole.
+- **The tiling knobs are parameters.** `object_size`, an area in pixels,
+  sets the tile: about `sqrt(1.5 * object_size / 0.001)` on a side, so an
+  object covers about a thousandth of a tile. `overlap` is a fraction of the
+  tile. The last tile in each row or column is pinned to the image edge, so
+  all tiles are the same size and batch without padding.
+- **Memory is measured, not declared.** The op runs one batch, reads the
+  GPU's peak, and sizes the next batches to `gpu_fraction` of the free
+  memory. A batch that runs out of memory is halved and retried.
+- **The merge is inside the op**: boxes shifted back to image coordinates,
+  then SAHI's greedy NMM across tiles, by intersection over the smaller box
+  (`merge_threshold`), so a box cut by a tile edge merges into the whole one.
 - **`Axes("y", "x", "c?")`**: a plane, with an optional colour axis. `c` is
-  something the op takes whole, so it is never tiled -- for this op the
-  "unsplit axes" declaration comes free from `Axes`.
-- **`native_size="imgsz"`** names the parameter that says what size the model
-  works at. The runner needs it to choose tiles; today it is only a knob.
-- **Tile size comes from the user**, not memory: an object about 30 px across
-  in a 10000 x 10000 image, and a model that expects about 64 px, gives tiles
-  of about `640 * 30 / 64 = 300` px, roughly 1100 tiles. Memory only caps it.
-- **Overlap at least the largest object** -- the user's number again -- so
-  every object is whole in some tile. No overlap declared by the op.
-- **Peak memory is mostly `fixed`**: the model and its activations at
-  `imgsz`, the same whatever the tile, so it is measured once per model. The
-  part that grows is converting the tile to 8-bit RGB and resizing it, a few
-  bytes a pixel.
-- **`merge=merge_boxes`**, an op: shift boxes back to image coordinates, then
-  NMS or NMM. The tiles also change the result -- an object cut by a tile edge
-  gets a partial box -- which the merge softens and the user should be told.
+  taken whole, never tiled.
+
+### The same op on a lazy image
+
+`ImageData` is numpy, so today the whole image must fit in RAM, and a bigger
+one would need the runner to tile it on the outside too (design.md, "Two
+levels"). Typed on `Array`, it would not:
+
+```python
+    image: Annotated[ImageOf[Array], Axes("y", "x", "c?")],
+```
+
+- **The op already only slices.** Its uses of `image` are `ndim`, `shape`
+  and `image[y:y + side, x:x + side]`. On a zarr the slice is numpy already;
+  on dask it needs `np.asarray(...)` around it.
+- **Contrast limits come first.** Each tile is stretched into 8-bit by
+  `to_rgb`, between its own 1st and 99.8th percentiles, so on 16-bit EM
+  every tile is stretched differently. The limits want working out once,
+  from a coarse level or a sample of tiles, and passing to `to_rgb` -- a fix
+  that is needed with or without `Array`.
+- **Getting the zarr to the worker** is the missing piece: the runner
+  converts everything to numpy today.

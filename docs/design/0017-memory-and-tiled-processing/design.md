@@ -129,6 +129,21 @@ n_elements <= (budget - fixed) / (scale * itemsize(dtype))
 - **Some of it does not grow.** Model weights and FFT plans stay the same
   size whatever the tile. YOLO is almost all `fixed`: the model at `imgsz`,
   plus `scale` for reading and resizing the tile.
+- **A model with a fixed input size still needs `scale`.** YOLO and SAM
+  resize whatever they get to `imgsz`, so the network costs the same for
+  any tile: that part is `fixed`. But the op prepares the tile *before*
+  the resize, at the tile's size, and that part grows. FastSAM on EM level 2
+  (23296 x 36096 uint16, 840 Mpixels, handed over whole) used ~15 GB in the
+  worker before it got to the model -- about 18 bytes a pixel, from
+  `to_rgb`'s float32 copy, a percentile sort, two temporaries and the
+  3-channel result -- and the kernel killed it. So `scale` is small but not
+  zero, and the order the op does things in sets it: resize first and it is
+  about 1x, plus 3x for the RGB result at `imgsz`, which is `fixed`.
+- **For these ops memory is rarely what sets the tile.** The tile comes
+  from scale (case 4); memory only caps it. With `scale` near 1, the cap is
+  roughly the budget in pixels, far bigger than any tile chosen for scale.
+  Where memory does bind is the case above: no tiling, a big image, and an
+  op that converts before it shrinks.
 - **A constant is not enough for decon.** Padding adds the PSF size and then
   rounds up to a 7-smooth number, so a 1000-pixel tile can pad to 1050. That
   needs level 3.
@@ -202,10 +217,65 @@ tile ≈ imgsz × (object size in the image / object size the model expects)
 
 The user gives the object size, by drawing a box; the model's training
 decides the size it expects. Memory only caps the tile. The overlap must be
-at least the largest object, so every object is whole in some tile, and the
-boxes merge with `merge_boxes`. A small image with big objects goes the
-other way: fewer, larger tiles, or a downsample. JDLL's rules, and SAM, which
-has the same problem, are in [yolo-sam-tiling.md](yolo-sam-tiling.md).
+at least the largest object, so every object is whole in some tile. A small
+image with big objects goes the other way: fewer, larger tiles, or a
+downsample. JDLL's rules, and SAM, which has the same problem, are in
+[yolo-sam-tiling.md](yolo-sam-tiling.md).
+
+## Ops that tile themselves
+
+A detector does its own tiling, inside the op, rather than leaving it to the
+runner. The runner's loop calls the op once per tile, which is one round trip
+to the worker per tile -- about 1200 of them for EM level 2 at 1024 -- and
+the model one tile at a time, when a GPU runs a batch of 16 nearly as fast as
+one. Inside the op, the loop costs nothing per tile and the tiles go to the
+model in batches. skop's `yolo` op does this: it picks the tile from the
+user's `object_size`, measures one batch on the GPU and sizes the rest to
+`gpu_fraction` of what is free, and merges the boxes across tiles itself.
+
+Such an op declares none of `overlap`, `peak_memory` or `merge`. The tiling
+knobs are ordinary parameters, shown by any GUI, and the memory is measured
+while it runs -- level 5, done by the op. The runner has nothing to tile it
+with, so it runs the op whole.
+
+### Two levels, and the type says which
+
+Tiling inside the op is for scale and for the GPU. Memory on the host is a
+separate question: a million x million image does not fit in RAM, however
+the op slices it afterwards. The op's image type decides who handles that.
+
+- **`ImageOf[np.ndarray]`**: the op needs its input as numpy, whole. If that
+  does not fit, the runner has to tile on the outside -- pieces of, say,
+  10000 x 10000 -- and the op tiles each piece again on the inside. A
+  detector's boxes then merge across the outer pieces as well as the inner
+  tiles. Today's `yolo` op is this.
+- **`ImageOf[Array]`**: the op takes a lazy array, a zarr, and makes each
+  tile numpy only where it cuts it, `np.asarray(image[y:y + t, x:x + t])`.
+  The whole image is never in memory, so the runner never tiles it, and
+  there is one level only. Nothing in a detector needs more: its only uses
+  of the image are its shape and slices of it.
+
+So typing on `Array` is how an op says "do not tile me": it reads lazily,
+for as long as the image is. Libraries that tile for you -- SAHI for YOLO,
+MONAI's `sliding_window_inference`, Cellpose's `eval` -- take the whole image
+as numpy or a tensor, so an op that calls them is `ImageOf[np.ndarray]` and
+gets the outer level. What can still be reused from them is the model's
+batching and the box merging.
+
+Preparation is per tile too, and that has a catch: whatever depends on the
+whole image has to be worked out before the tiles. Detectors stretch contrast
+into 8-bit (`to_rgb`, between the 1st and 99.8th percentiles). Done per
+tile, each tile gets its own stretch, the same object looks different from
+one tile to the next, and detections change at the seams -- already true of
+16-bit and grayscale images in today's `yolo` op. The limits come once, for
+the whole image, from a coarse level or a sample of tiles, and every tile is
+stretched with them.
+
+Prerequisite for `ImageOf[Array]`: getting an `Array` across to the worker.
+Today the runner converts everything to numpy. The first step is passing the
+store's location -- path, array, level -- and opening it in the worker; the
+proxy in [lazy-array-input.md](lazy-array-input.md) later, for anything that
+is not a zarr on disk.
 
 ## Who says what
 
@@ -255,7 +325,6 @@ And four things they do that this design should avoid:
 - Parameters that change per tile, such as a PSF that varies across the
   image (`richardson_lucy_variable.py` in tnia-python). A tile would need to
   know where it sits.
-- Whether an op can say it tiles internally, so the runner leaves it alone.
 
 ## Not decided
 
@@ -267,6 +336,8 @@ And four things they do that this design should avoid:
   `PeakMemory` are objects or keyword arguments on `@op`.
 - Free or total memory as the default budget.
 - Whether measured `peak_memory` is cached, and where.
+- How a detector's boxes merge across outer pieces, when an
+  `ImageOf[np.ndarray]` op is tiled on both levels.
 - Who owns the GPU transfer. [0018](../0018-explicit-array-carriers.md)
   proposes `ImageOf[cp.ndarray]`; whichever way it lands decides that the
   budget for a cupy op is VRAM, not RAM.
