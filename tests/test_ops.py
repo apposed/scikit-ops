@@ -168,6 +168,18 @@ def test_detected_boxes_are_shapes():
         assert boxes.role is Role.shapes
 
 
+def test_tiled_yolo_exposes_boxes_and_aligned_features():
+    spec = BY_NAME["skop.ops.detect.yolo:yolo"]
+    assert spec.env == "pytorch"
+    assert spec.outputs == ("boxes", "confidences", "classes")
+    assert spec.output_specs[0].role is skop.Role.shapes
+    params = {p.name: p for p in spec.params}
+    assert params["object_size"].default is None
+    assert params["gpu_fraction"].default == 0.9
+    assert params["merge_threshold"].default == 0.5
+    assert "imgsz" not in params
+
+
 MASK_DETECTORS = (
     "skop.ops.mask.microsam:microsam_masks",
     "skop.ops.mask.mobilesam:mobilesam_masks",

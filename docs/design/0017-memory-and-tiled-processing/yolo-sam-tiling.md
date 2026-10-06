@@ -1,7 +1,35 @@
 # Tiling for YOLO and SAM
 
-Status: notes, nothing built. Started from reading JDLL's `DetectionMerger`
+Status: detector tiling built; runner-level tiling and SAM remain proposals.
+Started from reading JDLL's `DetectionMerger`
 ([jdll-reuse.md](../../spec/jdll-reuse.md)).
+
+Update: `skop.ops.detect.yolo:yolo` implements detector tiling locally to
+the op, with object area, configurable overlap, checkpoint input size and
+measured GPU batching. It shifts boxes into image coordinates and merges
+same-class detections using SAHI 0.12.8's GreedyNMM with intersection over
+the smaller box. The general runner design and tiled SAM below remain proposals.
+
+The merger groups original boxes in confidence/coordinate order, matching at
+or above the threshold. It then rechecks each group member against the growing
+union and retains the maximum confidence. Groups do not acquire new matches
+after enlargement. Same-tile matches are included; there is no edge-priority
+heuristic. Matching uses float32 as SAHI does, with original-precision unions.
+Output class and keeper order are also SAHI's. `merge_threshold` controls this
+independently from per-tile NMS `iou`.
+
+The runtime implementation is NumPy-only. A multiscale grid stores one centre
+per original box and queries enough surrounding cells to cover all intersecting
+boxes, including differently sized ones. Empty cells are removed as boxes are
+claimed; large query windows scan occupied cells rather than expanding into
+empty space. The pinned SAHI package is only an optional comparison reference
+in `tests/test_yolo.py`.
+
+Batch calibration now excludes model warm-up and uses reserved CUDA memory,
+including allocator overhead. Intermediate sizes and real batch peaks refine
+the estimate, while OOM retries tighten the upper bound and allow later growth.
+A single preparation thread fills the next CPU batch during inference; CUDA
+uses pinned buffers, and the direct model/NMS path copies only detections back.
 
 **Tiling is not optional for detectors.** There are two separate reasons to
 tile, and only the first one is about memory.
