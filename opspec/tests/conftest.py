@@ -13,5 +13,6 @@ if importlib.util.find_spec("numpy") is None:
         "sample_results.py",
         "test_opspec.py",
         "test_plan.py",
+        "test_tiling.py",
         "test_wire.py",
     ]

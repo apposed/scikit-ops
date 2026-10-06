@@ -7,6 +7,7 @@ environment, so it must depend on nothing heavier.
 from __future__ import annotations
 
 import inspect
+import math
 import sys
 import types as _types
 from collections.abc import Callable
@@ -382,11 +383,115 @@ def params_for_of(annotation: Any) -> ParamsFor | None:
     return None
 
 
+# -- tiling: hints for cutting one call into several -----------------------
+#
+# All optional, and hints rather than rules: a runner uses them to choose a
+# default, and a caller can override any of it. See scikit-ops'
+# docs/design/0017-memory-and-tiled-processing/tiling.md.
+
+#: Bytes per element, by dtype name. opspec cannot ask numpy.
+_ITEMSIZE = {
+    "bool": 1,
+    "int8": 1,
+    "uint8": 1,
+    "int16": 2,
+    "uint16": 2,
+    "float16": 2,
+    "int32": 4,
+    "uint32": 4,
+    "float32": 4,
+    "int64": 8,
+    "uint64": 8,
+    "float64": 8,
+    "complex64": 8,
+    "complex128": 16,
+}
+
+
+def _dtype_name(dtype: Any) -> str:
+    """``"float32"``, from a name, a numpy dtype or a numpy scalar type."""
+    name = getattr(dtype, "name", None) if not isinstance(dtype, str) else dtype
+    if not isinstance(name, str):
+        name = getattr(dtype, "__name__", str(dtype))
+    if name not in _ITEMSIZE:
+        raise ValueError(f"Unknown dtype for memory accounting: {dtype!r}")
+    return name
+
+
+@dataclass(frozen=True)
+class PeakMemory:
+    """An op's peak memory, as a multiple of the input it is handed::
+
+        PeakMemory(scale=2, dtype="float32")   # two float32 copies at once
+
+    ``dtype`` is what the op's buffers are held in; None means the input's
+    own. ``fixed`` is bytes that do not grow with the input -- a model's
+    weights, say.
+    """
+
+    scale: float
+    dtype: str | None = None
+    fixed: int = 0
+
+    def __post_init__(self) -> None:
+        if self.dtype is not None:
+            object.__setattr__(self, "dtype", _dtype_name(self.dtype))
+
+    def bytes_for(self, n_elements: int, input_dtype: Any = "uint8") -> int:
+        """Peak bytes for an input of *n_elements* elements."""
+        itemsize = _ITEMSIZE[self.dtype or _dtype_name(input_dtype)]
+        return math.ceil(self.scale * n_elements * itemsize) + self.fixed
+
+    def to_dict(self) -> dict:
+        return {"scale": self.scale, "dtype": self.dtype, "fixed": self.fixed}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> PeakMemory:
+        return cls(data["scale"], data.get("dtype"), data.get("fixed", 0))
+
+
+@dataclass(frozen=True)
+class Overlap:
+    """How far each tile reaches past its edges, in pixels::
+
+        Overlap(10)                       # always 10 pixels
+        Overlap(param="sigma", scale=4)   # 4 x sigma, read off the call
+
+    A formula is data, not code, so any front end can work it out.
+    """
+
+    pixels: int = 0
+    param: str | None = None
+    scale: float = 1.0
+
+    def resolve(self, values: dict) -> int:
+        """The overlap for a call with these argument *values*."""
+        if self.param is None:
+            return self.pixels
+        value = values.get(self.param)
+        if value is None:
+            raise ValueError(f"Overlap needs {self.param}, and the call has none")
+        if isinstance(value, (list, tuple)):
+            value = max(value)
+        return self.pixels + math.ceil(self.scale * float(value))
+
+    def to_dict(self) -> dict:
+        return {"pixels": self.pixels, "param": self.param, "scale": self.scale}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Overlap:
+        return cls(data.get("pixels", 0), data.get("param"), data.get("scale", 1.0))
+
+
 @dataclass(frozen=True)
 class _OpConfig:
     env: str | None
     main_thread: bool = False
     exclusive: bool = False
+    tile: tuple[str, ...] = ()
+    overlap: Overlap | None = None
+    peak_memory: PeakMemory | None = None
+    merge: str | None = None
 
 
 def op(
@@ -395,6 +500,10 @@ def op(
     env: str | None = None,
     main_thread: bool = False,
     exclusive: bool = False,
+    tile: str | tuple[str, ...] | None = None,
+    overlap: Overlap | int | None = None,
+    peak_memory: PeakMemory | None = None,
+    merge: str | None = None,
 ) -> Callable:
     """Declare a function as an op.
 
@@ -414,10 +523,26 @@ def op(
         main_thread: Whether the op must run on its worker's main thread.
         exclusive: Whether the op needs a worker to itself, rather than
             sharing one with other ops in the same environment.
+        tile: The parameter, or parameters, a runner may cut into tiles to
+            fit memory. They are cut at the same places.
+        overlap: How far a tile reaches past its edges: an ``Overlap``, or
+            a number of pixels.
+        peak_memory: The op's peak memory, as a ``PeakMemory``; what a runner
+            sizes tiles from.
+        merge: How the tiles go back together. ``"crop"`` keeps each tile's
+            middle and drops the overlap.
     """
 
     def decorate(f: Callable) -> Callable:
-        f.__opspec__ = _OpConfig(env=env, main_thread=main_thread, exclusive=exclusive)
+        f.__opspec__ = _OpConfig(
+            env=env,
+            main_thread=main_thread,
+            exclusive=exclusive,
+            tile=(tile,) if isinstance(tile, str) else tuple(tile or ()),
+            overlap=Overlap(overlap) if isinstance(overlap, int) else overlap,
+            peak_memory=peak_memory,
+            merge=merge,
+        )
         return f
 
     return decorate(fn) if fn is not None else decorate
@@ -833,6 +958,11 @@ class OpSpec:
     main_thread: bool = False
     #: Whether the op needs a worker to itself.
     exclusive: bool = False
+    #: The parameters a runner may cut into tiles, and its hints for doing so.
+    tile: tuple[str, ...] = ()
+    overlap: Overlap | None = None
+    peak_memory: PeakMemory | None = None
+    merge: str | None = None
 
     #: Set only when rebuilt from the wire, where the return type is a name
     #: rather than the live type the property below derives outputs from.
@@ -889,6 +1019,12 @@ class OpSpec:
             "return_role": self.return_role.value if self.return_role else None,
             "outputs": [o.to_dict() for o in self.outputs],
             "doc": self.doc,
+            # Tiling hints only when declared, so an op without them looks
+            # exactly as it did to a reader that predates them.
+            **({"tile": list(self.tile)} if self.tile else {}),
+            **({"overlap": self.overlap.to_dict()} if self.overlap else {}),
+            **({"peak_memory": self.peak_memory.to_dict()} if self.peak_memory else {}),
+            **({"merge": self.merge} if self.merge else {}),
         }
 
     @classmethod
@@ -912,6 +1048,14 @@ class OpSpec:
             form=data.get("form", FUNCTION),
             main_thread=bool(data.get("main_thread", False)),
             exclusive=bool(data.get("exclusive", False)),
+            tile=tuple(data.get("tile", ())),
+            overlap=Overlap.from_dict(data["overlap"]) if data.get("overlap") else None,
+            peak_memory=(
+                PeakMemory.from_dict(data["peak_memory"])
+                if data.get("peak_memory")
+                else None
+            ),
+            merge=data.get("merge"),
             _outputs=tuple(OutputSpec.from_dict(o) for o in data.get("outputs", ())),
         )
 
@@ -955,6 +1099,16 @@ class OpSpec:
                 )
             )
 
+        names = {p.name for p in params}
+        unknown = [name for name in config.tile if name not in names]
+        if config.overlap and config.overlap.param:
+            unknown += [config.overlap.param] * (config.overlap.param not in names)
+        if unknown:
+            raise TypeError(
+                f"Op {fn.__qualname__}'s tiling hints name no such parameter: "
+                f"{', '.join(unknown)}"
+            )
+
         directions = {p.direction for p in params}
         if OUT in directions and MUT in directions:
             raise TypeError(
@@ -993,6 +1147,10 @@ class OpSpec:
             form=form,
             main_thread=config.main_thread,
             exclusive=config.exclusive,
+            tile=config.tile,
+            overlap=config.overlap,
+            peak_memory=config.peak_memory,
+            merge=config.merge,
             _outputs=outputs,
         )
         fn.__opspec_spec__ = result
