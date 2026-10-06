@@ -197,7 +197,7 @@ def test_a_chosen_plan_is_obeyed(runner):
         position={"z": 2},
         dispositions={0: skop.SELECT},
     )
-    assert not plan.lossless
+    assert not plan.uses_all_data
 
     labels = runner.run(toy.quadrants, image=stack, plans={"image": plan})
     assert labels.shape == (8, 6)

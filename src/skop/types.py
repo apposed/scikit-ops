@@ -29,66 +29,29 @@ takes (docs/design/0018)::
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Protocol, TypeVar, runtime_checkable
-
 import numpy as np
+
+from opspec.types import (
+    Array,
+    BoxesOf,
+    ImageOf,
+    LabelsOf,
+    MasksOf,
+    PointsOf,
+    ShapesOf,
+    SurfaceOf,
+    TracksOf,
+    VectorsOf,
+)
 
 from ._spec import Role
 
-
-@runtime_checkable
-class Array(Protocol):
-    """Anything array-shaped: numpy, cupy, dask, zarr and xarray all qualify.
-
-    ``__array__`` is absent on purpose: cupy defines it and raises, so testing
-    for it passes and the conversion then fails.
-    """
-
-    @property
-    def shape(self) -> tuple[int, ...]: ...
-
-    @property
-    def dtype(self) -> Any: ...
-
-    @property
-    def ndim(self) -> int: ...
-
-    @property
-    def size(self) -> int: ...
-
-    def __getitem__(self, key: Any) -> Any: ...
-
-
-A = TypeVar("A")
-
-#: A picture: intensities to be displayed as such.
-ImageOf = Annotated[A, Role.image]
-
-#: A label image: integer object IDs, 0 for background.
-LabelsOf = Annotated[A, Role.labels]
-
-#: A stack of binary masks, as (N, Y, X) uint8, one object per plane. Unlike
-#: a label image these may overlap, which is why they are not one. See
-#: ``skop.masks`` for the projections a front end shows them through.
-MasksOf = Annotated[A, Role.masks]
-
-#: Coordinates, as (N, D) in axis order matching the image they came from.
-PointsOf = Annotated[A, Role.points]
-
-#: Displacements, as (N, 2, D): a start position and a projection.
-VectorsOf = Annotated[A, Role.vectors]
-
-#: Trajectories, as (N, D+2): track ID, time, then coordinates.
-TracksOf = Annotated[A, Role.tracks]
-
-#: Freeform shapes: polygons, lines, paths.
-ShapesOf = Annotated[A, Role.shapes]
-
-#: A mesh: vertices, faces and values.
-SurfaceOf = Annotated[A, Role.surface]
+# The role aliases and the Array protocol are opspec's; these are the numpy
+# spellings skop's ops use.
 
 ImageData = ImageOf[np.ndarray]
 LabelsData = LabelsOf[np.ndarray]
+#: See ``skop.masks`` for the projections a front end shows these through.
 MasksData = MasksOf[np.ndarray]
 PointsData = PointsOf[np.ndarray]
 VectorsData = VectorsOf[np.ndarray]
@@ -96,11 +59,12 @@ TracksData = TracksOf[np.ndarray]
 
 #: Axis-aligned bounding boxes, as (N, 4): [min_y, min_x, max_y, max_x].
 #: See ``skop.boxes`` for the converters between this and everyone else's order.
-BoxesData = Annotated[np.ndarray, Role.shapes]
+BoxesData = BoxesOf[np.ndarray]
 
 __all__ = [
     "Array",
     "BoxesData",
+    "BoxesOf",
     "ImageData",
     "ImageOf",
     "LabelsData",

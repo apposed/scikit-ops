@@ -106,7 +106,7 @@ def _unwrap_optional(annotation: Any) -> Any:
 
 
 def _check_args(spec: _spec.OpSpec, args: dict) -> None:
-    if spec.form is _spec.FUNCTION:
+    if spec.form == _spec.FUNCTION:
         return
     missing = [
         p.name for p in spec.params if p.direction is not None and p.name not in args
@@ -120,8 +120,8 @@ def _check_args(spec: _spec.OpSpec, args: dict) -> None:
 
 
 def _pack(spec: _spec.OpSpec, result: Any, refs: list) -> dict:
-    names = spec.outputs
-    if spec.form is not _spec.FUNCTION or not names:
+    names = tuple(o.name for o in spec.outputs)
+    if spec.form != _spec.FUNCTION or not names:
         # The host owns the output buffers; nothing to send back.
         return {}
     if names == ("result",):

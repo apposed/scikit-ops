@@ -19,6 +19,11 @@ SPECS, FAILURES = skop.discover()
 BY_NAME = {s.name: s for s in SPECS}
 
 
+def names(spec):
+    """An op's output names, in order."""
+    return tuple(o.name for o in spec.outputs)
+
+
 def test_every_op_module_imports():
     assert FAILURES == [], "\n".join(str(f) for f in FAILURES)
 
@@ -115,12 +120,12 @@ def test_enum_params_carry_their_choices():
 
 def test_unseg_reports_counts_alongside_masks():
     spec = BY_NAME["skop.ops.segment.unseg:unseg"]
-    assert spec.outputs == ("nuclei", "cells", "n_nuclei", "n_cells")
+    assert names(spec) == ("nuclei", "cells", "n_nuclei", "n_cells")
 
 
 def test_starfun3d_returns_labels_and_points():
     spec = BY_NAME["skop.ops.segment.starfun3d:segment_nuclei"]
-    assert spec.outputs == ("labels", "points")
+    assert names(spec) == ("labels", "points")
 
 
 def test_deconvolution_backends_differ_only_in_environment():
@@ -147,7 +152,7 @@ def test_box_detectors_are_substitutable():
 
     assert fastsam.env == "pytorch"
     assert object_aware.env == "segment-everything"
-    assert fastsam.outputs == object_aware.outputs == ("boxes",)
+    assert names(fastsam) == names(object_aware) == ("boxes",)
     assert fastsam.return_type is object_aware.return_type
 
     shared = ("image", "conf", "iou", "max_det", "imgsz")
@@ -155,7 +160,7 @@ def test_box_detectors_are_substitutable():
         assert shared == tuple(p.name for p in spec.params if p.name in shared)
 
 
-def test_detected_boxes_are_shapes():
+def test_detected_boxes_are_boxes():
     # Without the role a front end has no way to know these are rectangles
     # to draw rather than an array to display.
     from skop import Role
@@ -164,15 +169,15 @@ def test_detected_boxes_are_shapes():
         "skop.ops.detect.fastsam:fastsam",
         "skop.ops.detect.object_aware_yolo:object_aware_yolo",
     ):
-        boxes = next(o for o in BY_NAME[name].output_specs if o.name == "boxes")
-        assert boxes.role is Role.shapes
+        boxes = next(o for o in BY_NAME[name].outputs if o.name == "boxes")
+        assert boxes.role is Role.boxes
 
 
 def test_tiled_yolo_exposes_boxes_and_aligned_features():
     spec = BY_NAME["skop.ops.detect.yolo:yolo"]
     assert spec.env == "pytorch"
-    assert spec.outputs == ("boxes", "confidences", "classes")
-    assert spec.output_specs[0].role is skop.Role.shapes
+    assert names(spec) == ("boxes", "confidences", "classes")
+    assert spec.outputs[0].role is skop.Role.boxes
     params = {p.name: p for p in spec.params}
     assert params["object_size"].default is None
     assert params["gpu_fraction"].default == 0.9
@@ -193,17 +198,17 @@ def test_mask_detector_takes_boxes_and_returns_masks_and_boxes(name):
     from skop import Role
 
     spec = BY_NAME[name]
-    assert spec.outputs == ("masks", "boxes")
+    assert names(spec) == ("masks", "boxes")
 
     inputs = {p.name: p.role for p in spec.params}
     assert inputs["image"] is Role.image
-    assert inputs["boxes"] is Role.shapes
+    assert inputs["boxes"] is Role.boxes
 
-    outputs = {o.name: o.role for o in spec.output_specs}
+    outputs = {o.name: o.role for o in spec.outputs}
     # Not Role.labels: these overlap, and a front end has to project them
     # before it can show them at all.
     assert outputs["masks"] is Role.masks
-    assert outputs["boxes"] is Role.shapes
+    assert outputs["boxes"] is Role.boxes
 
 
 def test_mask_detectors_are_substitutable():
@@ -290,7 +295,7 @@ def test_the_threshold_family_is_substitutable():
             ("invert", bool, False),
             ("label_objects", bool, True),
         ], f"{name} does not match the family's signature"
-        assert spec.output_specs[0].role is Role.labels
+        assert spec.outputs[0].role is Role.labels
 
 
 def test_every_global_threshold_takes_a_whole_stack():
@@ -327,7 +332,7 @@ def test_filters_take_an_image_and_return_one(namespace):
         assert spec.params[0].name == "image"
         assert spec.params[0].role is Role.image
         assert len(spec.outputs) == 1
-        assert spec.output_specs[0].role is Role.image
+        assert spec.outputs[0].role is Role.image
 
 
 def test_footprint_shapes_are_offered_as_a_choice():

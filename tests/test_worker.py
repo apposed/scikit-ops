@@ -88,3 +88,9 @@ def test_unwrap_optional_leaves_real_unions_alone():
     assert worker._unwrap_optional(int | str) == (int | str)
     assert worker._unwrap_optional(Path | None) is Path
     assert worker._unwrap_optional(Path) is Path
+
+
+def test_progress_outside_worker_is_a_noop():
+    # Called directly, with nobody listening.
+    skop.progress("hello", 1, 2)
+    assert skop.cancel_requested() is False

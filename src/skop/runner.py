@@ -603,10 +603,10 @@ def _adaptations(
 
 
 def _unpack(spec: _spec.OpSpec, outputs: dict, buffers: dict) -> Any:
-    names = spec.outputs
+    names = tuple(o.name for o in spec.outputs)
     if not names:
         return None
-    if spec.form is not _spec.FUNCTION:
+    if spec.form != _spec.FUNCTION:
         # Results landed in the caller's own buffers.
         owned = [buffers[name][0] for name in names if name in buffers]
         if not owned:

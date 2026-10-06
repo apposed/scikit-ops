@@ -11,7 +11,19 @@ Anything heavier lives in a submodule that is imported lazily.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Any
+
+# skop's spec layer is opspec, which a checkout keeps beside src/ rather than
+# in it: <checkout>/opspec/src. A worker, the metadata service and Fiji all
+# reach skop by putting src/ on sys.path, so put opspec's directory there too,
+# and first, for the reason src/ goes first -- a checkout shadows the copy an
+# environment installs. An installed skop has no such directory; there opspec
+# is an ordinary dependency.
+_CHECKOUT_OPSPEC = Path(__file__).resolve().parents[2] / "opspec" / "src"
+if (_CHECKOUT_OPSPEC / "opspec").is_dir() and str(_CHECKOUT_OPSPEC) not in sys.path:
+    sys.path.insert(0, str(_CHECKOUT_OPSPEC))
 
 from ._adapt import ITERATE, PASS, SELECT, AdaptationPlan, plan
 from ._progress import cancel_requested, progress

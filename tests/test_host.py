@@ -10,10 +10,7 @@ from __future__ import annotations
 
 import json
 from enum import Enum
-from pathlib import Path
-from typing import Optional
 
-import numpy as np
 import pytest
 
 import skop
@@ -33,63 +30,10 @@ def roundtrip(spec: skop.OpSpec) -> skop.OpSpec:
     return skop.OpSpec.from_dict(json.loads(json.dumps(spec.to_dict())))
 
 
-# -- the wire vocabulary ------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("annotation", "expected"),
-    [
-        (int, skop.INT),
-        (float, skop.FLOAT),
-        (str, skop.STR),
-        (bool, skop.BOOL),
-        (np.ndarray, skop.NDARRAY),
-        (Path, skop.PATH),
-        (Flavor, skop.ENUM),
-        (tuple[float, float], skop.UNKNOWN),
-        (None, skop.UNKNOWN),
-    ],
-)
-def test_wire_type_names(annotation, expected):
-    assert skop.type_spec(annotation).name == expected
-
-
-def test_bool_is_not_an_int():
-    # bool subclasses int, and a checkbox is not a number field.
-    assert skop.type_spec(bool).name == skop.BOOL
-
-
-def test_annotated_types_classify_as_what_they_wrap():
-    assert skop.type_spec(skop.types.LabelsData).name == skop.NDARRAY
-
-
-def test_enum_carries_its_choices():
-    spec = skop.type_spec(Flavor)
-    assert [(c.name, c.value) for c in spec.choices] == [
-        ("sweet", "SW"),
-        ("savory", "SV"),
-    ]
-
-
-def test_optional_is_the_inner_type_marked_nullable():
-    # Both spellings of a union have to classify the same way; the older
-    # one is what an op pinned to an older Python is free to use.
-    spec = skop.type_spec(Optional[float])  # noqa: UP045
-    assert spec.name == skop.FLOAT
-    assert spec.nullable
-
-    modern = skop.type_spec(float | None)
-    assert (modern.name, modern.nullable) == (skop.FLOAT, True)
-
-
-def test_multi_member_union_is_unknown():
-    assert skop.type_spec(int | str).name == skop.UNKNOWN
-
-
-def test_unknown_says_what_it_could_not_render():
-    # A front end that cannot render a parameter has to explain which one and
-    # why, so the spelling of the original annotation has to survive.
-    assert "tuple" in skop.type_spec(tuple[int, ...]).detail
+# -- every op through the wire ----------------------------------------
+#
+# What the wire form is, and that it round-trips, is opspec's and tested there
+# (opspec/tests/test_wire.py). These check skop's own ops against it.
 
 
 def test_every_op_classifies():
@@ -101,126 +45,11 @@ def test_every_op_classifies():
             assert skop.type_spec(param.type).name in skop.WIRE_TYPES
 
 
-# -- OpSpec as JSON -----------------------------------------------------
-
-
-def test_spec_survives_json():
-    spec = skop.spec(toy.scale)
-    back = roundtrip(spec)
-    assert back.name == spec.name
-    assert back.module == spec.module
-    assert back.function == spec.function
-    assert back.env == spec.env
-    assert back.form == spec.form
-    assert back.doc == spec.doc
-    assert [p.name for p in back.params] == [p.name for p in spec.params]
-
-
 def test_every_op_round_trips():
     specs, _ = skop.discover()
     assert specs
     for spec in specs:
         assert roundtrip(spec).to_dict() == spec.to_dict()
-
-
-def test_derived_outputs_are_written_out_not_derived():
-    # A NamedTuple return does not cross the boundary, so the output names
-    # have to travel as data rather than be recomputed from a type.
-    spec = skop.spec(toy.scale)
-    assert spec.outputs == ("scaled", "total")
-    assert roundtrip(spec).outputs == ("scaled", "total")
-
-
-def test_output_roles_survive():
-    back = roundtrip(skop.spec(toy.find_nothing))
-    assert [(o.name, o.role) for o in back.output_specs] == [
-        ("labels", skop.Role.labels),
-        ("points", skop.Role.points),
-    ]
-
-
-def test_ui_hints_survive():
-    back = roundtrip(skop.spec(toy.scale))
-    factor = next(p for p in back.params if p.name == "factor")
-    assert factor.ui == {
-        "widget_type": "FloatSlider",
-        "min": 0.0,
-        "max": 10.0,
-        "step": 0.1,
-    }
-
-
-def test_required_and_default_survive():
-    back = roundtrip(skop.spec(toy.scale))
-    image, factor = back.params
-    assert image.required
-    assert not factor.required
-    assert factor.default == 2.0
-
-
-def test_out_params_are_marked():
-    back = roundtrip(skop.spec(toy.scale_into))
-    result = next(p for p in back.params if p.name == "result")
-    assert result.direction is skop._spec.OUT
-    assert result not in back.inputs
-
-
-def test_enum_default_travels_as_its_value():
-    # The worker rebuilds an Enum from its value, so that is what a front end
-    # must send back -- and so what the default has to be spelled as.
-    from skop.ops import morphology
-
-    spec = skop.spec(morphology.dilation)
-    shape = next(p.to_dict() for p in spec.params if p.name == "shape")
-    assert shape["type"]["name"] == skop.ENUM
-    assert shape["default"] in [c["value"] for c in shape["type"]["choices"]]
-
-    # And the names are what a dialog shows, alongside the values it sends.
-    back = roundtrip(spec)
-    footprint = next(p for p in back.params if p.name == "shape")
-    assert [c.name for c in footprint.type.choices] == ["ball", "box", "diamond"]
-
-
-def test_axes_survive():
-    back = roundtrip(skop.spec(toy.quadrants))
-    image = back.params[0]
-    assert image.axes is not None
-    assert image.axes.names == ("y", "x")
-    assert not image.axes.variadic
-
-
-def test_variadic_axes_survive():
-    from skop.ops import threshold
-
-    back = roundtrip(skop.spec(threshold.otsu))
-    image = back.params[0]
-    assert image.axes is not None
-    assert image.axes.variadic
-    assert image.axes.slots == ()
-
-
-def test_role_survives():
-    back = roundtrip(skop.spec(toy.quadrants))
-    assert back.params[0].role is skop.Role.image
-
-
-def test_unrenderable_param_costs_only_itself():
-    @skop.op(env="minimal")
-    def awkward(
-        image: np.ndarray,
-        window: tuple[int, int] = (3, 3),
-        sigma: float = 1.0,
-    ) -> np.ndarray: ...
-
-    back = roundtrip(skop.spec(awkward))
-    kinds = {p.name: p.type.name for p in back.params}
-    assert kinds == {
-        "image": skop.NDARRAY,
-        "window": skop.UNKNOWN,
-        "sigma": skop.FLOAT,
-    }
-    # And it is optional, so a front end can leave it alone and still run.
-    assert not next(p for p in back.params if p.name == "window").required
 
 
 # -- describe -----------------------------------------------------------
@@ -291,7 +120,7 @@ def test_plan_accepts_json_string_keys():
         dispositions={"0": skop.SELECT},
     )
     assert plan["select"] == [[0, 2]]
-    assert not plan["lossless"]
+    assert not plan["uses_all_data"]
 
 
 def test_plan_accepts_an_explicit_mapping():
