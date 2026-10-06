@@ -108,7 +108,7 @@ A multiscale grid finds nearby candidates without an all-pairs matrix; the
 runtime needs no SAHI dependency. To run the optional reference comparisons:
 
 ```sh
-uv run --with sahi==0.12.8 pytest tests/test_yolo_merge.py
+uv run --with sahi==0.12.8 pytest tests/test_yolo.py -k sahi
 ```
 
 GPU batches are calibrated after warm-up, with intermediate sizes before

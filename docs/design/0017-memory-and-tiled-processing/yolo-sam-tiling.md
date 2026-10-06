@@ -23,7 +23,7 @@ per original box and queries enough surrounding cells to cover all intersecting
 boxes, including differently sized ones. Empty cells are removed as boxes are
 claimed; large query windows scan occupied cells rather than expanding into
 empty space. The pinned SAHI package is only an optional comparison reference
-in `tests/test_yolo_merge.py`.
+in `tests/test_yolo.py`.
 
 Batch calibration now excludes model warm-up and uses reserved CUDA memory,
 including allocator overhead. Intermediate sizes and real batch peaks refine
