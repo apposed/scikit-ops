@@ -75,7 +75,7 @@ def test_workflow_bindings_name_real_parameters(spec):
             continue
         chooser = next(p for p in spec.inputs if p.name == param.params_for.chooser)
         for label, fn in chooser.choices.options:
-            names = {p.name for p in skop.spec(fn).inputs}
+            names = {p.name for p in skop.OpSpec.from_op(fn).inputs}
             missing = sorted(set(param.params_for.binds) - names)
             assert not missing, (
                 f"{spec.name}.{param.name} binds {missing}, "
@@ -289,7 +289,7 @@ def test_the_threshold_family_is_substitutable():
     ]
     assert len(two_class) >= 7, two_class
     for name in two_class:
-        spec = skop.spec(getattr(threshold, name))
+        spec = skop.OpSpec.from_op(getattr(threshold, name))
         assert [(p.name, p.type, p.default) for p in spec.params] == [
             ("image", np.ndarray, inspect.Parameter.empty),
             ("invert", bool, False),
@@ -307,7 +307,7 @@ def test_every_global_threshold_takes_a_whole_stack():
         fn = getattr(threshold, name)
         if not skop.is_op(fn):
             continue
-        axes = next(p for p in skop.spec(fn).params if p.name == "image").axes
+        axes = next(p for p in skop.OpSpec.from_op(fn).params if p.name == "image").axes
         assert axes.variadic and axes.slots == (), f"{name} claims axes {axes}"
 
 
@@ -328,7 +328,7 @@ def test_filters_take_an_image_and_return_one(namespace):
     ]
     assert len(ops) >= 6, namespace
     for fn in ops:
-        spec = skop.spec(fn)
+        spec = skop.OpSpec.from_op(fn)
         assert spec.params[0].name == "image"
         assert spec.params[0].role is Role.image
         assert len(spec.outputs) == 1

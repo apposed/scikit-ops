@@ -25,7 +25,7 @@ def plan_for(fn, param, array, axes, **kwargs):
 def run_adapted(fn, param, array, axes, **kwargs):
     """Plan and execute in-process, the way a worker does."""
     plan = plan_for(fn, param, array, axes, **kwargs)
-    spec = skop.spec(fn)
+    spec = skop.OpSpec.from_op(fn)
     return _adapt.execute(spec, fn, {param: array}, {param: plan})
 
 
@@ -91,6 +91,6 @@ def test_unstackable_output_says_so():
 
 
 def test_no_plan_means_no_adaptation():
-    spec = skop.spec(toy.quadrants)
+    spec = skop.OpSpec.from_op(toy.quadrants)
     plain = _adapt.execute(spec, toy.quadrants, {"image": np.zeros((4, 6))}, {})
     assert plain.shape == (4, 6)

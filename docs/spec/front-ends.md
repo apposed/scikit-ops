@@ -19,7 +19,7 @@ A front end may read `OpSpec` and nothing else. Specifically:
 | `ParamSpec.role` | whether it is a layer/image selector instead |
 | `ParamSpec.axes` | how many axes it consumes, and what it likes to call them |
 | `ParamSpec.direction` | `Out` params are never shown |
-| `output_specs` → `OutputSpec` | where each result goes |
+| `outputs` → `OutputSpec` | where each result goes |
 | `OutputSpec.role` | which display type |
 
 Plus `Runner.run(..., on_progress=, on_start=)`, the three `subscribe_build_*`

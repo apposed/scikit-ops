@@ -54,7 +54,6 @@ from ._spec import (
     TypeSpec,
     is_op,
     op,
-    spec,
     type_spec,
 )
 
@@ -95,7 +94,6 @@ __all__ = [
     "plan",
     "progress",
     "run",
-    "spec",
     "type_spec",
 ]
 

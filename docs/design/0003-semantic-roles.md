@@ -89,21 +89,22 @@ for the no-role path.
 
 ## Outputs needed a spec of their own
 
-`OpSpec.outputs` is a `tuple[str, ...]` and stays that way — it is the wire
-view, used on both sides of the Appose boundary, and it must stay trivially
-serializable.
-
-Front ends need more, so `OpSpec.output_specs` derives `OutputSpec(name, type,
-role)` on demand, from three different places depending on the op:
+`OpSpec.outputs` is a tuple of `OutputSpec(name, type, role)`, derived from
+three different places depending on the op:
 
 - a **computer/inplace** op: from the matching `Out`/`Mut` parameter
 - a **function** op returning one value: from the return annotation
 - a **function** op returning a `NamedTuple`: from that class's field
   annotations, resolved with `get_type_hints(..., include_extras=True)`
 
+Changed in October 2026: `outputs` used to be the names alone, with the
+details in a separate `output_specs`. The spec layer moved to opspec, which
+merged the two (opspec/docs/design/0003, K5); the names are
+`[o.name for o in spec.outputs]`.
+
 That last resolution can fail — a `NamedTuple` defined in an awkward scope,
-a forward reference that does not resolve — and when it does, `_field_hints`
-swallows the exception. The reasoning is in the comment there: any failure
+a forward reference that does not resolve — and when it does, opspec's
+`_outputs_of` swallows the exception. The reasoning is in the comment there: any failure
 costs a role, and a missing role is a degraded GUI, not a broken op. Nothing
 about running the op depends on this working.
 

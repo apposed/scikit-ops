@@ -36,7 +36,7 @@ def paths(
 
 def coerce(**args):
     """Run ``_coerce`` over the op above, as a worker does on arrival."""
-    return worker._coerce(skop.spec(paths), args)
+    return worker._coerce(skop.OpSpec.from_op(paths), args)
 
 
 def test_path_is_rebuilt():

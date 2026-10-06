@@ -171,7 +171,7 @@ about how to display it. `skop.types` adds that missing half:
 | `PointsData` | `Role.points` | a Points layer |
 | `VectorsData` | `Role.vectors` | a Vectors layer |
 | `TracksData` | `Role.tracks` | a Tracks layer |
-| `BoxesData` | `Role.shapes` | a Shapes layer |
+| `BoxesData` | `Role.boxes` | a Shapes layer |
 | `MasksData` | `Role.masks` | a Labels layer, once projected |
 
 `MasksData` is the odd one: an `(N, Y, X)` stack of masks that may overlap, so

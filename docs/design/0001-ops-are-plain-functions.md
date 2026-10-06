@@ -28,7 +28,7 @@ with skop.Runner() as runner:
     runner.run(toy.add, a=2, b=3)      # mode C/D: same function, own process
 ```
 
-`OpSpec` (in `_spec.py`) is the reified description — name, module, env, params,
+`OpSpec` (from opspec, re-exported by `skop._spec`) is the reified description — name, module, env, params,
 outputs, docstring, form. It is produced by introspection at discovery time and
 is the only thing a front end is allowed to look at. No front end imports an op
 module in order to render it.

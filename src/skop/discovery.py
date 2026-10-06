@@ -13,7 +13,7 @@ import importlib
 import pkgutil
 from dataclasses import dataclass
 
-from ._spec import OpSpec, is_op, spec
+from ._spec import OpSpec, is_op
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ def discover(package: str = "skop.ops") -> tuple[list[OpSpec], list[LoadFailure]
             # once per module that imports it -- which is what makes a
             # namespace's __init__.py free to re-export its ops.
             if is_op(obj) and obj.__module__ == module_name:
-                specs.append(spec(obj))
+                specs.append(OpSpec.from_op(obj))
 
     specs.sort(key=lambda s: s.name)
     return specs, failures

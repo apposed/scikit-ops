@@ -37,20 +37,20 @@ def _apply(
 
 
 def test_missing_env_marks_a_workflow():
-    assert skop.spec(_apply).is_workflow
-    assert skop.spec(_apply).env is None
-    assert not skop.spec(sobel).is_workflow
+    assert skop.OpSpec.from_op(_apply).is_workflow
+    assert skop.OpSpec.from_op(_apply).env is None
+    assert not skop.OpSpec.from_op(sobel).is_workflow
 
 
 def test_choices_keep_declaration_order_and_labels():
-    choices = skop.spec(_apply).inputs[1].choices
+    choices = skop.OpSpec.from_op(_apply).inputs[1].choices
     assert choices.labels == ("sobel", "scharr")
     assert choices.op("scharr") is scharr
     assert choices.label(sobel) == "sobel"
 
 
 def test_choices_expose_ids_for_a_front_end_across_a_wire():
-    ids = dict(skop.spec(_apply).inputs[1].choices.ids)
+    ids = dict(skop.OpSpec.from_op(_apply).inputs[1].choices.ids)
     assert ids["sobel"] == "skop.ops.edges:sobel"
 
 
@@ -60,11 +60,11 @@ def test_choices_label_of_an_unlisted_op_is_none():
     The list constrains the GUI, not the function -- a front end asking what
     to show for something it does not offer gets no answer, not an error.
     """
-    assert skop.spec(_apply).inputs[1].choices.label(len) is None
+    assert skop.OpSpec.from_op(_apply).inputs[1].choices.label(len) is None
 
 
 def test_a_lone_bound_name_is_not_iterated_as_characters():
-    assert skop.spec(_apply).inputs[2].params_for.binds == ("image",)
+    assert skop.OpSpec.from_op(_apply).inputs[2].params_for.binds == ("image",)
 
 
 def test_binds_accepts_a_sequence():
@@ -133,7 +133,7 @@ def test_an_op_outside_the_chooser_still_runs(runner, image):
 def test_calling_a_workflow_directly_needs_no_runner():
     """Mode B: a workflow is a plain function, and its sub-op call falls
     through to the default runner rather than needing one passed in."""
-    assert skop.spec(_apply).is_workflow
+    assert skop.OpSpec.from_op(_apply).is_workflow
     # Not actually executed here -- that would build an environment -- but the
     # ambient lookup must be absent outside a run, so run() picks the default.
     from skop.runner import _current

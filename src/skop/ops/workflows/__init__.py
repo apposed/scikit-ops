@@ -22,7 +22,7 @@ tree makes that layering physical, and a cycle an obvious mistake rather than a
 subtle one.
 
 Nothing else distinguishes them. Discovery finds a workflow the same way it
-finds any op, ``spec()`` describes it the same way, and a front end runs it
+finds any op, ``OpSpec.from_op()`` describes it the same way, and a front end runs it
 through the same call. What tells them apart is ``OpSpec.is_workflow``, which
 reads the missing environment -- never the module path.
 """

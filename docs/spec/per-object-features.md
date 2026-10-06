@@ -11,7 +11,7 @@ returned a confidence per box:
 
 ```python
 class Boxes(NamedTuple):
-    boxes: BoxesData      # (N, 4), Role.shapes
+    boxes: BoxesData      # (N, 4), Role.boxes
     scores: np.ndarray    # (N,), no role
 ```
 

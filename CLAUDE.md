@@ -14,6 +14,7 @@ built, and graduates into a numbered design doc when it lands.
 ```
 src/skop/                 op-independent machinery
 src/skop/ops/<ns>[.py|/]  ops, one namespace per file or package
+opspec/                   the spec layer, its own package: @op, OpSpec, roles, plans
 envs/<env-id>/pixi.toml   environment definitions, shared between ops
 pixi/examples/            the host for notebooks and interactive tests
 notebooks/                narrative examples, outputs committed
@@ -37,6 +38,17 @@ in `envs/` — that directory holds the recipe only.
 
 ## Facts worth not rediscovering
 
+- skop's spec layer is **opspec**, a standard-library-only package kept in
+  `opspec/` and published separately. `skop._spec` only re-exports it;
+  `skop._adapt` takes planning from it and keeps execution. Where the two
+  differed, the decisions and reasons are in
+  [opspec/docs/design/0003](opspec/docs/design/0003-reconciling-with-scikit-ops.md).
+  opspec has its own [CLAUDE.md](opspec/CLAUDE.md): it never imports numpy.
+- Read a spec with `OpSpec.from_op(fn)`. `spec.outputs` are `OutputSpec`s,
+  not names; boxes are `Role.boxes`; a plan says `uses_all_data`.
+- In a checkout, importing skop puts `opspec/src` first on `sys.path`, the
+  way `skop.host.INIT` puts `src` first. That is how a worker finds opspec:
+  the environments pin a scikit-ops that predates it.
 - `skop.discover()` returns `(specs, failures)`. `specs` is every op declared,
   including ones this interpreter could not run — a catalogue, because a front
   end must offer Cellpose before its environment exists. `failures` is op
@@ -54,7 +66,7 @@ in `envs/` — that directory holds the recipe only.
 
 ```sh
 uv sync                      # host env, incl. the examples group
-uv run pytest                # fast tests only; skips anything needing an env
+uv run pytest                # fast tests, skop's and opspec's; skips anything needing an env
 uv run pytest --build-envs   # builds missing op environments; slow first time
 uv run ruff check --fix && uv run ruff format
 uv run jupyter lab           # notebooks; or select .venv as the kernel

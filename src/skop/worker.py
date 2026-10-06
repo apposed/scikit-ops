@@ -42,7 +42,7 @@ def invoke(
         owns.
     """
     fn = getattr(importlib.import_module(module), function)
-    spec = _spec.spec(fn)
+    spec = _spec.OpSpec.from_op(fn)
     adaptations = {
         plan["param"]: _adapt.AdaptationPlan.from_dict(plan) for plan in plans or []
     }

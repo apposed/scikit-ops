@@ -50,9 +50,6 @@ from opspec.op import (
     type_spec,
 )
 
-#: skop's older name for ``OpSpec.from_op``, kept while callers move over.
-spec = OpSpec.from_op
-
 __all__ = [
     "ALIASES",
     "BOOL",
@@ -92,6 +89,5 @@ __all__ = [
     "op",
     "params_for_of",
     "role_of",
-    "spec",
     "type_spec",
 ]

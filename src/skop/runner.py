@@ -398,7 +398,7 @@ class Runner:
                 another thread. Waiting for the first progress event instead
                 would leave silent ops uncancellable.
         """
-        spec = _spec.spec(fn)
+        spec = _spec.OpSpec.from_op(fn)
         call_args = dict(args or {})
         call_args.update(kwargs)
         _validate(spec, call_args)

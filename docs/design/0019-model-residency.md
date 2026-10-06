@@ -139,7 +139,7 @@ still eviction, and still above the op.
 
 ## Interactions
 
-- **`exclusive`** (`_spec.py:749`) gives an op its own worker. Marking the
+- **`exclusive`** (`@op(exclusive=True)`) gives an op its own worker. Marking the
   training op exclusive makes this *worse*, not better — two live processes,
   both wanting the GPU — unless releasing the predict worker comes first.
   Exclusivity separates ops; it does not sequence them.
