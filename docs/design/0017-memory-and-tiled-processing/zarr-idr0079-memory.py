@@ -35,6 +35,7 @@ uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py  # ga
 uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py frangi
 uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py gaussian --cap none
 uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py --skimage --cap none
+uv run docs/design/0017-memory-and-tiled-processing/zarr-idr0079-memory.py --memory 300M  # tiled
 """
 
 import argparse
@@ -65,6 +66,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument("op", nargs="?", default="gaussian", choices=OPS)
 parser.add_argument("--cap", default="1G", help="memory cap, e.g. 1G, or none")
 parser.add_argument("--skimage", action="store_true", help="call skimage, not skop")
+parser.add_argument(
+    "--memory", default=None, help="tile to fit this budget, e.g. 300M; skop only"
+)
 args = parser.parse_args()
 
 
@@ -131,6 +135,14 @@ with tempfile.TemporaryDirectory() as tmp:
     print("memory cap:", "none" if cap == "max" else f"{int(cap) / 1e9:.1f} GB")
 
     print("via:", "skimage, in this process" if args.skimage else "skop worker")
+    if args.memory and not args.skimage:
+        from opspec.tiling import plan_tiles
+
+        spec = skop.OpSpec.from_op(fn)
+        if spec.peak_memory:
+            overlap = spec.overlap.resolve(params) if spec.overlap else 0
+            plan = plan_tiles(z.shape, z.dtype, spec.peak_memory, args.memory, overlap)
+            print(f"tiled to fit {args.memory}: {plan.summary}")
 
     started = time.perf_counter()
     try:
@@ -145,7 +157,7 @@ with tempfile.TemporaryDirectory() as tmp:
             # closed on the way out: a live worker otherwise keeps Python
             # from exiting
             with skop.Runner() as runner:
-                out = runner.run(fn, image=z, **params)
+                out = runner.run(fn, image=z, memory=args.memory, **params)
         print(f"OK    {type(out).__name__} {out.shape} {out.dtype}")
     except Exception as e:  # noqa: BLE001 -- a probe, the failure is the result
         print(f"FAIL  {type(e).__name__}: {e}")

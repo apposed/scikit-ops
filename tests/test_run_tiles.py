@@ -6,7 +6,9 @@ The planner itself is opspec's, tested in opspec/tests/test_tiling.py.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
+import skop
 from opspec.op import PeakMemory
 from opspec.tiling import plan_tiles
 from skop._tiling import run_tiles
@@ -65,3 +67,18 @@ def test_a_result_bigger_than_the_budget_goes_to_disk():
     # float64 output, 8x the input: more than the budget, so a memmap.
     assert isinstance(result, np.memmap)
     assert str(result.filename).endswith("result.npy")
+
+
+@pytest.mark.env("skimage")
+def test_gaussian_tiled_through_a_runner_equals_gaussian_whole():
+    from skop.ops.smooth import gaussian
+
+    data = image((24, 60, 80))
+    lazy = Lazy(data)
+    with skop.Runner() as runner:
+        whole = runner.run(gaussian, image=data, sigma=1.5)
+        # 8 bytes a pixel, ~0.9 MB whole: a 200K budget means several tiles.
+        tiled = runner.run(gaussian, image=lazy, sigma=1.5, memory="200K")
+    assert len(lazy.reads) > 1
+    assert max(lazy.reads) < lazy.size
+    np.testing.assert_allclose(tiled, whole, rtol=0, atol=1e-5)

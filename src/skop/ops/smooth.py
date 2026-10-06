@@ -30,7 +30,7 @@ from typing import Annotated
 
 import numpy as np
 
-from skop import Axes, op
+from skop import Axes, Overlap, PeakMemory, op
 from skop.types import ImageData
 
 from ._util import Footprint, channel_axis, footprint, per_channel
@@ -53,7 +53,16 @@ def _unit(image: np.ndarray) -> tuple[np.ndarray, float, float]:
     return (x - low) / span, low, span
 
 
-@op(env="skimage")
+@op(
+    env="skimage",
+    # A tile reaches as far as the kernel does: scikit-image cuts it off at
+    # 4 sigma. Two float32 copies are live at once, the input as float32 and
+    # the result, so peak memory is 2x the tile as float32.
+    tile="image",
+    overlap=Overlap(param="sigma", scale=4),
+    peak_memory=PeakMemory(scale=2, dtype="float32"),
+    merge="crop",
+)
 def gaussian(image: _Image, sigma: float = 1.0) -> ImageData:
     """Blur an image with a Gaussian kernel.
 
