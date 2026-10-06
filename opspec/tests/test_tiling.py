@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import math
 
 import numpy as np
 import pytest
 
 from opspec.op import OpSpec, Overlap, PeakMemory, op
+from opspec.tiling import parse_bytes, plan_tiles
 
 # -- the hints --------------------------------------------------------------
 
@@ -88,3 +90,62 @@ def test_hints_survive_the_wire():
         spec.peak_memory,
         spec.merge,
     )
+
+
+# -- the planner ------------------------------------------------------------
+
+FLOAT_PAIR = PeakMemory(scale=2, dtype="float32")  # 8 bytes a pixel
+
+
+def coverage(plan):
+    """How many tiles write each pixel."""
+    counts = np.zeros(plan.shape, dtype=int)
+    for tile in plan.tiles:
+        counts[tile.write] += 1
+    return counts
+
+
+def test_parse_bytes():
+    assert parse_bytes("1G") == 1024**3
+    assert parse_bytes("512M") == 512 * 1024**2
+    assert parse_bytes("1.5GiB") == int(1.5 * 1024**3)
+    assert parse_bytes(4096) == 4096
+    with pytest.raises(ValueError):
+        parse_bytes("lots")
+
+
+def test_an_input_that_fits_is_one_tile():
+    plan = plan_tiles((10, 20, 30), "uint8", FLOAT_PAIR, "1M", overlap=3)
+    assert plan.calls == 1
+    assert plan.tiles[0].read == (slice(0, 10), slice(0, 20), slice(0, 30))
+    assert plan.summary == "1 tile: the whole input fits"
+
+
+def test_tiles_cover_the_input_exactly_once_and_fit():
+    plan = plan_tiles((142, 394, 792), "uint8", FLOAT_PAIR, "64M", overlap=6)
+    assert plan.calls > 1
+    assert (coverage(plan) == 1).all()
+    for tile in plan.tiles:
+        elements = math.prod(s.stop - s.start for s in tile.read)
+        assert FLOAT_PAIR.bytes_for(elements) <= plan.budget
+    assert plan.peak <= plan.budget
+
+
+def test_overlap_stops_at_the_real_edge():
+    # Two tiles along x: each reaches 3 pixels into the other, never outside.
+    plan = plan_tiles((4, 100), "uint8", PeakMemory(scale=1), 300, overlap=3)
+    left, right = plan.tiles
+    assert left.read[1] == slice(0, 53) and left.keep[1] == slice(0, 50)
+    assert right.read[1] == slice(47, 100) and right.keep[1] == slice(3, 53)
+    assert left.write[1] == slice(0, 50) and right.write[1] == slice(50, 100)
+
+
+def test_an_axis_left_out_is_never_cut():
+    plan = plan_tiles((8, 64, 3), "uint8", PeakMemory(scale=1), 600, axes=(0, 1))
+    assert all(tile.read[2] == slice(0, 3) for tile in plan.tiles)
+    assert (coverage(plan) == 1).all()
+
+
+def test_an_impossible_budget_says_so():
+    with pytest.raises(ValueError, match="Cannot fit"):
+        plan_tiles((100, 100), "uint8", FLOAT_PAIR, 1000, overlap=20)
