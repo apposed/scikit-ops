@@ -554,6 +554,109 @@ def test_object_aware_yolo_finds_objects_of_no_particular_class(runner):
     check_boxes(runner.run(object_aware_yolo, image=image), image.shape)
 
 
+# The tiled YOLO op, run for real: a stock COCO model on ultralytics' own
+# test picture, so the right answer -- people, a bus -- is not in doubt.
+YOLO26N = "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt"
+BUS = "https://ultralytics.com/images/bus.jpg"
+PERSON = 0
+# ~1024 px tiles: object_size is an area, and the op makes a tile of side
+# sqrt(1.5 * object_size / 0.001).
+TILED = 1024**2 * 0.001 / 1.5
+
+
+@pytest.fixture(scope="module")
+def yolo_weights():
+    from skop.assets import file_from_url
+
+    return file_from_url(YOLO26N, "yolo/yolo26n.pt")
+
+
+@pytest.fixture(scope="module")
+def bus():
+    from skimage import io
+
+    from skop.assets import file_from_url
+
+    return io.imread(file_from_url(BUS, "yolo/bus.jpg"))
+
+
+@pytest.fixture(scope="module")
+def bus_on_canvas(bus):
+    """The bus picture pasted into a big blank image, at a known offset."""
+    canvas = np.zeros((2400, 2400, 3), np.uint8)
+    canvas[700 : 700 + bus.shape[0], 900 : 900 + bus.shape[1]] = bus
+    return canvas, np.array([700, 900, 700, 900])
+
+
+def people(result):
+    return result.boxes[np.asarray(result.classes) == PERSON]
+
+
+def best_iou(box, boxes):
+    top = np.maximum(box[:2], boxes[:, :2])
+    bottom = np.minimum(box[2:], boxes[:, 2:])
+    overlap = np.prod(np.clip(bottom - top, 0, None), axis=1)
+    area = np.prod(box[2:] - box[:2])
+    areas = np.prod(boxes[:, 2:] - boxes[:, :2], axis=1)
+    return (overlap / (area + areas - overlap)).max()
+
+
+@pytest.mark.env("pytorch")
+def test_yolo_finds_the_people_on_the_bus(runner, yolo_weights, bus):
+    from skop.ops.detect import yolo
+
+    result = runner.run(yolo, image=bus, weights=yolo_weights)
+    check_boxes(result, bus.shape)
+    assert len(people(result)) >= 3
+
+
+@pytest.mark.env("pytorch")
+def test_yolo_outputs_line_up_and_respect_conf(runner, yolo_weights, bus):
+    from skop.ops.detect import yolo
+
+    result = runner.run(yolo, image=bus, weights=yolo_weights, conf=0.4)
+    assert len(result.boxes) == len(result.confidences) == len(result.classes)
+    assert min(result.confidences) >= 0.4
+    # No order check: the op returns SAHI's order, grouped by class, for now.
+
+
+@pytest.mark.env("pytorch")
+def test_yolo_finds_nothing_in_a_blank_image(runner, yolo_weights):
+    from skop.ops.detect import yolo
+
+    blank = np.zeros((1200, 1200, 3), np.uint8)
+    result = runner.run(yolo, image=blank, weights=yolo_weights, object_size=TILED)
+    assert result.boxes.shape == (0, 4)
+    assert len(result.confidences) == len(result.classes) == 0
+
+
+@pytest.mark.env("pytorch")
+def test_tiled_yolo_boxes_land_where_the_people_are(
+    runner, yolo_weights, bus, bus_on_canvas
+):
+    from skop.ops.detect import yolo
+
+    canvas, offset = bus_on_canvas
+    whole = runner.run(yolo, image=bus, weights=yolo_weights)
+    tiled = runner.run(yolo, image=canvas, weights=yolo_weights, object_size=TILED)
+    check_boxes(tiled, canvas.shape)
+    for box in people(whole) + offset:
+        assert best_iou(box, people(tiled)) > 0.5
+
+
+@pytest.mark.env("pytorch")
+def test_yolo_batch_size_does_not_change_the_answer(
+    runner, yolo_weights, bus_on_canvas
+):
+    from skop.ops.detect import yolo
+
+    canvas, _ = bus_on_canvas
+    run = {"image": canvas, "weights": yolo_weights, "object_size": TILED}
+    big = runner.run(yolo, gpu_fraction=0.9, **run)
+    small = runner.run(yolo, gpu_fraction=0.01, **run)
+    np.testing.assert_allclose(big.boxes, small.boxes, atol=1)
+
+
 def check_masks(result, image, prompts) -> None:
     """Assertions every mask detector's output has to satisfy."""
     import numpy as np
