@@ -99,8 +99,18 @@ with skop.Runner() as runner:
 `object_size` is area in pixels²; `None` runs the whole image once. Areas
 outside 0.1%-50% of the image select square tiles with side
 `ceil(sqrt(1.5 * object_size / 0.001))`. Input size comes from the checkpoint.
-Tiles align with the image edges, and class-aware suppression removes duplicate
-and truncated boxes, preferring boxes seen whole in an overlapping tile.
+Tiles align with the image edges. Class-aware GreedyNMM matches SAHI 0.12.8:
+same-class boxes with IoS at least `merge_threshold` become an enclosing box
+with the maximum confidence. This includes matches within a tile. The default
+merge threshold is 0.5, independent of the per-tile NMS `iou` parameter.
+Outputs follow class order, then SAHI's keeper order within each class.
+A multiscale grid finds nearby candidates without an all-pairs matrix; the
+runtime needs no SAHI dependency. To run the optional reference comparisons:
+
+```sh
+uv run --with sahi==0.12.8 pytest tests/test_yolo_merge.py
+```
+
 GPU batches are calibrated after warm-up, with intermediate sizes before
 larger batches. Measured peaks adjust the size up or down; an out-of-memory
 retry establishes an upper bound rather than permanently halving throughput.

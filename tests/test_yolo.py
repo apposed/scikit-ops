@@ -137,7 +137,12 @@ def test_tiles_cover_edges_and_restore_coordinates(detector):
     origins = [(y, x) for y in (0, 30, 60, 70) for x in (0, 30, 60, 90, 110)]
     assert [tuple(c) for batch in detector.calls for c in batch] == origins
     np.testing.assert_allclose(
-        result.boxes, [[y + 5, x + 5, y + 15, x + 15] for y, x in origins]
+        result.boxes,
+        [
+            [y + 5, x + 5, y + 15, x + 15]
+            for x in (0, 30, 60, 90, 110)
+            for y in (0, 30, 60, 70)
+        ],
     )
     np.testing.assert_allclose(result.confidences, [0.9] * len(origins))
     assert result.classes == [0] * len(origins)
@@ -167,7 +172,7 @@ def test_short_axis_padding_preserves_scale(detector):
     )
 
 
-def test_partial_duplicates_lose_to_full_boxes_and_classes_stay_separate(detector):
+def test_fragments_are_merged_and_classes_stay_separate(detector):
     def boxes(coords, inputs):
         rows = []
         for y, x in coords:
@@ -184,7 +189,7 @@ def test_partial_duplicates_lose_to_full_boxes_and_classes_stay_separate(detecto
         image(), detector.weights, object_size=40**2 * 0.001 / 1.5, overlap=0.25
     )
     np.testing.assert_allclose(result.boxes, [[12, 34, 28, 46]] * 2, atol=1e-5)
-    np.testing.assert_allclose(result.confidences, [0.8, 0.7])
+    np.testing.assert_allclose(result.confidences, [0.95, 0.7])
     assert result.classes == [0, 1]
 
 
@@ -299,9 +304,9 @@ def test_no_detections_returns_empty_aligned_outputs(detector):
     assert result.confidences == result.classes == []
 
 
-def test_single_tile_keeps_the_models_own_suppression(detector):
+def test_single_tile_also_merges_contained_boxes(detector):
     detector.boxes = lambda coords, inputs: [
         [[8, 8, 24, 24, 0.9, 0], [8, 8, 12, 12, 0.8, 0]] for _ in coords
     ]
     result = yolo(image(), detector.weights)
-    assert len(result.boxes) == 2
+    assert len(result.boxes) == 1

@@ -176,6 +176,7 @@ def test_tiled_yolo_exposes_boxes_and_aligned_features():
     params = {p.name: p for p in spec.params}
     assert params["object_size"].default is None
     assert params["gpu_fraction"].default == 0.9
+    assert params["merge_threshold"].default == 0.5
     assert "imgsz" not in params
 
 

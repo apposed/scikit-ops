@@ -9,6 +9,7 @@ from skop import Axes, cancel_requested, op, progress
 from skop.types import ImageData
 
 from .._util import to_rgb
+from ._merge import greedy_nmm
 from ._result import Detections
 
 
@@ -22,6 +23,7 @@ def yolo(
     conf: Annotated[float, {"min": 0.0, "max": 1.0}] = 0.25,
     iou: Annotated[float, {"min": 0.0, "max": 1.0}] = 0.5,
     max_det: int = 300,
+    merge_threshold: Annotated[float, {"min": 0.0, "max": 1.0}] = 0.5,
 ) -> Detections:
     """Detect objects in a large image with a YOLO .pt checkpoint.
 
@@ -40,13 +42,16 @@ def yolo(
             batch size up or down; out-of-memory batches are halved. MPS
             samples driver memory against its recommended working set.
         conf: Minimum detection confidence.
-        iou: Per-tile NMS IoU threshold. Across tiles this is the intersection
-            over smaller box threshold, which also removes cropped duplicates.
+        iou: Per-tile NMS IoU threshold.
         max_det: Maximum detections per tile; there is no whole-image cap.
+        merge_threshold: IoS threshold for class-aware GreedyNMM, matching
+            SAHI 0.12.8. Matching boxes, including within one tile, become an
+            enclosing box with the maximum confidence. Equal overlap matches.
 
     Returns:
         boxes: (N, 4) as [min_y, min_x, max_y, max_x], in image coordinates.
-        confidences: One confidence per box, highest first.
+        confidences: One confidence per box. Outputs follow SAHI's class order,
+            then the original keeper order within each class.
         classes: One integer class ID per box, in the same order.
 
     Square tiles only need resizing. If an image axis is shorter than the
@@ -78,6 +83,8 @@ def yolo(
         raise ValueError("overlap must be in [0, 1), gpu_fraction in (0, 1]")
     if object_size is not None and (not math.isfinite(object_size) or object_size <= 0):
         raise ValueError("object_size must be a positive area or None")
+    if not 0 <= merge_threshold <= 1:
+        raise ValueError("merge_threshold must be in [0, 1]")
     if image.ndim not in (2, 3) or (image.ndim == 3 and image.shape[-1] not in (3, 4)):
         raise ValueError("expected a 2-D image or trailing RGB(A) channels")
 
@@ -179,19 +186,7 @@ def yolo(
             coords,
             scales,
         ):
-            # Prefer an overlapping tile's full box to a cut-off edge box.
-            partial = (
-                ((boxes[:, 0] <= 1) & (x > 0))
-                | ((boxes[:, 1] <= 1) & (y > 0))
-                | ((boxes[:, 2] >= min(side, width - x) * sx - 1) & (x + side < width))
-                | (
-                    (boxes[:, 3] >= min(side, height - y) * sy - 1)
-                    & (y + side < height)
-                )
-            )
-            boxes = np.column_stack(
-                (boxes, partial, np.full(len(boxes), y * width + x))
-            )
+            boxes = boxes.astype(np.float64)
             boxes[:, [0, 2]] = np.clip(
                 boxes[:, [0, 2]] / sx + x, x, min(x + side, width)
             )
@@ -316,28 +311,7 @@ def yolo(
                 gpu.empty_cache()
                 current = submit(done, batch_size)
 
-        detections = np.concatenate(found)
-        areas = (detections[:, 2] - detections[:, 0]) * (
-            detections[:, 3] - detections[:, 1]
-        )
-        order = np.lexsort((-detections[:, 4], detections[:, 6]))
-        keep = []
-        while order.size:
-            first, rest = order[0], order[1:]
-            keep.append(first)
-            intersection = np.maximum(
-                0,
-                np.minimum(detections[first, 2:4], detections[rest, 2:4])
-                - np.maximum(detections[first, :2], detections[rest, :2]),
-            ).prod(axis=1)
-            duplicate = (
-                (detections[first, 5] == detections[rest, 5])
-                & (detections[first, 7] != detections[rest, 7])
-                & (intersection > iou * np.minimum(areas[first], areas[rest]))
-            )
-            order = rest[~duplicate]
-        detections = detections[keep]
-        detections = detections[np.argsort(-detections[:, 4], kind="stable")]
+        detections = greedy_nmm(np.concatenate(found), merge_threshold)
         progress(f"Found {len(detections)} objects", len(origins), len(origins))
         return Detections(
             detections[:, [1, 0, 3, 2]],
