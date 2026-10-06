@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+target/
+
+# Environments
+.venv/
+venv/
+
+# Tools
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Editors
+.vscode/
+.idea/
+
+# Pixi
+.pixi/

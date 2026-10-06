@@ -1,6 +1,9 @@
 # VS Code
 .vscode/
 
+# opspec's examples, not committed for now; they stay on disk
+opspec/examples/
+
 # Pixi
 .pixi/
 pixi.lock

@@ -34,6 +34,11 @@ requires-python = ">=3.10"
 dependencies = [
     "appose>=0.12",
     "numpy",
+    # The spec layer, from its own directory in this repo. A git URL so that
+    # `pip install git+https://github.com/apposed/scikit-ops` finds it: opspec
+    # is not on PyPI. PyPI refuses packages with URL dependencies, so this
+    # becomes "opspec>=..." when either one is published.
+    "opspec @ git+https://github.com/apposed/scikit-ops#subdirectory=opspec",
 ]
 
 [dependency-groups]
@@ -80,12 +85,24 @@ examples = [
 # from under VS Code -- it prunes anything the selected groups do not name.
 default-groups = ["dev", "examples"]
 
+# opspec lives in ./opspec. In development uv installs that checkout,
+# editable, rather than the git URL above.
+[tool.uv.workspace]
+members = ["opspec"]
+
+[tool.uv.sources]
+opspec = { workspace = true }
+
 [project.urls]
 homepage = "https://github.com/apposed/scikit-ops"
 documentation = "https://github.com/apposed/scikit-ops/blob/main/README.md"
 source = "https://github.com/apposed/scikit-ops"
 download = "https://pypi.org/project/scikit-ops"
 tracker = "https://github.com/apposed/appose/issues"
+
+[tool.hatch.metadata]
+# For the opspec git URL in dependencies.
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/skop"]
