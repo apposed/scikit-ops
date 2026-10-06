@@ -9,7 +9,26 @@ run in its own isolated environment through
 the op changes between those modes.
 
 Design notes — why the machinery is shaped this way, and what else was
-considered — are in [`docs/`](docs/README.md).
+considered — are in [`docs/`](docs/README.md). How an op describes itself is
+[opspec](opspec/README.md), a separate package kept in this repository.
+
+## Install
+
+Not on PyPI yet, so from GitHub:
+
+```sh
+pip install "git+https://github.com/apposed/scikit-ops"
+```
+
+That brings opspec with it. opspec on its own, standard library only, for
+a host or plugin that describes ops without running them:
+
+```sh
+pip install "opspec @ git+https://github.com/apposed/scikit-ops#subdirectory=opspec"
+```
+
+Working on the code instead, from a checkout: `uv sync`, which installs both,
+editable. See [Development](#development).
 
 ## Layout
 
@@ -19,6 +38,7 @@ envs/<env-id>/init.py     optional; runs in each worker before its I/O loop
 src/skop/                 op-independent machinery
 src/skop/ops/<ns>.py      an op namespace, when its ops share one environment
 src/skop/ops/<ns>/<op>.py an op namespace, when its ops do not
+opspec/                   how an op describes itself: @op, OpSpec, roles, plans
 src/imgops/               napari/magicgui front ends (not published)
 ```
 

@@ -61,7 +61,10 @@ knows to loop rather then passing the entire array.  `Axes("z?", "y", "x", "t")`
 indicates the op can handle a time series of frames, and optionally volumes (? indicates z is optional) 
 
 **`PeakMemory`** — peak memory use of the op expressed as a multiple of
-image size, `PeakMemory(scale=8, dtype=np.float32)`
+image size, `PeakMemory(scale=8, dtype=np.float32)`. Where it is declared
+has moved on since this note: on `@op(...)`, beside the other tiling hints,
+rather than on a parameter as in the example below. See scikit-ops'
+[0017 tiling design](../../../docs/design/0017-memory-and-tiled-processing/tiling.md).
 
 **`Array`** — what counts as an array when an op does not want to name a
 library: `shape`, `dtype`, `ndim`, `size`, `__getitem__`. An op writes

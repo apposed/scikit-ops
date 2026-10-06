@@ -13,6 +13,23 @@ library. It defines two things:
 Hosts (napari, CellProfiler, a notebook) read the op declarations and hand
 ops to a runner.
 
+## Install
+
+opspec lives in the [scikit-ops](../README.md) repository. Not on PyPI yet:
+
+```sh
+pip install "opspec @ git+https://github.com/apposed/scikit-ops#subdirectory=opspec"
+```
+
+## Docs
+
+- [0001](docs/design/0001-opspec.md) — what an `OpSpec` is: `@op`, roles,
+  `ImageOf`, `Axes`
+- [0002](docs/design/0002-runner.md) — what a runner does: the `Runner` and
+  `Builder` protocols
+- [0003](docs/design/0003-reconciling-with-scikit-ops.md) — where opspec and
+  scikit-ops' spec code differed, and which way each went
+
 ## AI use
 
 Developed with AI assistance (Claude). A human reviews, understands and

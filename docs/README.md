@@ -45,10 +45,21 @@ load-bearing.
 | [0014](design/0014-make-decon-ops.md) | Richardson-Lucy and the Gaussian PSF | part: no OpenCL |
 | [0015](design/0015-augment-ops.md) | Augmentation as its own kind of op | no, behind 0011 |
 | [0016](design/0016-choosing-an-environment.md) | Which environment a new op declares | yes, a rule in force |
-| [0017](design/0017-memory-and-tiled-processing/) | Memory declarations and tiling | no |
+| [0017](design/0017-memory-and-tiled-processing/) | Memory declarations and tiling | part: tiling inside the `yolo` op |
 | [0018](design/0018-explicit-array-carriers.md) | Every op states its array carrier | no |
 | [0019](design/0019-model-residency.md) | How long a loaded model stays resident | no |
 | [0020](design/0020-reproducible-environments.md) | Committed locks, so a rebuild reproduces | no |
+
+## opspec
+
+How an op describes itself lives in [opspec](../opspec/README.md), its own
+package in this repository, with its own design notes:
+
+| # | Topic |
+| --- | --- |
+| [0001](../opspec/docs/design/0001-opspec.md) | What an `OpSpec` is: `@op`, roles, `ImageOf`, `Axes` |
+| [0002](../opspec/docs/design/0002-runner.md) | What a runner does: the `Runner` and `Builder` protocols |
+| [0003](../opspec/docs/design/0003-reconciling-with-scikit-ops.md) | Where opspec and skop's spec code differed, and which way each went |
 
 ## Open items
 
