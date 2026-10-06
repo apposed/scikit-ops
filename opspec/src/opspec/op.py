@@ -783,19 +783,25 @@ def _outputs_of(
 ) -> tuple[OutputSpec, ...]:
     """An op's outputs. A NamedTuple return is one output per field.
 
-    Annotations are resolved against *fn*'s globals, because a file run with
-    ``exec`` inherits the caller's ``from __future__ import annotations`` --
-    which turns every annotation in it into a string.
+    The fields' annotations may be strings, and are resolved where their names
+    live. That is usually the NamedTuple's own module, which may not be the
+    op's: a shared result type is imported by several ops. A file run with
+    ``exec`` has no module to look in, so *fn*'s globals come next. Failing
+    both, the raw annotations, at the cost of their roles.
     """
     if return_type in (None, type(None), inspect.Parameter.empty):
         return ()
     fields = getattr(return_type, "_fields", None)
     if fields is None:
         return (OutputSpec("result", return_type, return_role),)
-    namespace = getattr(fn, "__globals__", None)
-    try:
-        hints = get_type_hints(return_type, globalns=namespace, include_extras=True)
-    except Exception:  # noqa: BLE001 - any failure here just costs a role.
+    hints = None
+    for namespace in (None, getattr(fn, "__globals__", None)):
+        try:
+            hints = get_type_hints(return_type, globalns=namespace, include_extras=True)
+            break
+        except Exception:  # noqa: BLE001, S112 - a failure here just costs a role.
+            continue
+    if hints is None:
         hints = dict(getattr(return_type, "__annotations__", {}))
     return tuple(
         OutputSpec(name, _strip(hints.get(name)), role_of(hints.get(name)))

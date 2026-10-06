@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from sample_ops import (
     blur_careful,
+    detect,
     find_nothing,
     otsu,
     scale,
@@ -202,3 +203,11 @@ def test_choices_and_params_for():
     assert params["step_args"].params_for == ParamsFor("step", binds=("image",))
     # The list constrains a GUI, not the function.
     assert workflow(np.ones(2), step=lambda image: image * 3)[0] == 3
+
+
+def test_output_roles_resolve_in_the_result_types_own_module():
+    # Boxes lives in sample_results, and sample_ops never imports BoxesOf:
+    # the field annotations are strings that only resolve over there.
+    assert [(o.name, o.role) for o in OpSpec.from_op(detect).outputs] == [
+        ("boxes", Role.boxes)
+    ]

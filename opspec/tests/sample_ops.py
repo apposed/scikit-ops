@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Annotated, NamedTuple
 
 import numpy as np
+from sample_results import Boxes
 
 from opspec.op import Axes, Choices, Out, ParamsFor, op
 from opspec.types import ImageOf, LabelsOf, PointsOf
@@ -100,3 +101,10 @@ def workflow(
 ) -> np.ndarray:
     """A workflow: no environment, and a menu of ops for one of its steps."""
     return step(image, **(step_args or {}))
+
+
+@op(env="pytorch")
+def detect(image: ImageOf[np.ndarray]) -> Boxes:
+    """Returns a NamedTuple defined in another module, which this one never
+    imports the field types of."""
+    return Boxes(np.zeros((0, 4)))

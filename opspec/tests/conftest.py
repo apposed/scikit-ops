@@ -10,6 +10,7 @@ collect_ignore = []
 if importlib.util.find_spec("numpy") is None:
     collect_ignore = [
         "sample_ops.py",
+        "sample_results.py",
         "test_opspec.py",
         "test_plan.py",
         "test_wire.py",
