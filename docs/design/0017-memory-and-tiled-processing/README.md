@@ -1,9 +1,25 @@
 # 0017 — Memory requirements and tiled processing
 
-**Status:** proposed. Nothing built.
+**Status:** partly built.
 
-**Reading order:** this page, then [design.md](design.md), which is the whole
-design. [examples.md](examples.md) shows it on three real ops.
+**Built**
+
+- Tiling inside an op: `skop.ops.detect.yolo` picks tiles from
+  `object_size`, batches them on the GPU with memory measured as it runs,
+  and merges boxes across tiles.
+- Test scripts that run ops under a memory cap: `zarr-idr0079-*.py`,
+  `yolo-*.py`.
+
+**Not built yet**
+
+- The declarations on `@op`: `tile`, `overlap`, `peak_memory`, `merge`.
+- The runner tiling an op: cut, run each tile, crop or blend.
+- Lazy input: getting a zarr into the worker, so an op can take
+  `ImageOf[Array]`.
+- Contrast limits for the whole image, before `yolo` stretches each tile.
+
+**Reading order:** this page, then [tiling.md](tiling.md), which is the whole
+design. [tiling-examples.md](tiling-examples.md) shows it on three real ops.
 [lazy-array-input.md](lazy-array-input.md) and
 [yolo-sam-tiling.md](yolo-sam-tiling.md) are optional background: the
 alternatives considered and why the design came out as it did.
@@ -56,8 +72,8 @@ Everything for this design lives in this directory, until it is built:
 
 | File | What |
 |---|---|
-| [design.md](design.md) | The design: what an op declares, what the runner does |
-| [examples.md](examples.md) | Gaussian, Richardson-Lucy and YOLO, declared in full |
+| [tiling.md](tiling.md) | The design: what an op declares, what the runner does |
+| [tiling-examples.md](tiling-examples.md) | Gaussian, Richardson-Lucy and YOLO, declared in full |
 | [lazy-array-input.md](lazy-array-input.md) | Background for case 1: getting zarr and dask inputs into the worker |
 | `zarr-skimage.py` | Which scikit-image functions accept a zarr array |
 | `zarr-idr0079-download.py` | Copies idr0079 (3D light sheet, 355 MB) into `test_images/` |

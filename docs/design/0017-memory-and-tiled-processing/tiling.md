@@ -1,6 +1,7 @@
-# 0017 design — declaring memory and tiling
+# 0017 tiling — what an op declares, what the runner does
 
-Status: proposed. Nothing built. The cases, how to run the test scripts, and
+Status: partly built -- tiling inside one op, `yolo`; the rest is proposed.
+What is built and what is not, the cases, how to run the test scripts, and
 the file list are in [README.md](README.md).
 
 ## The problem
@@ -15,8 +16,18 @@ complex64, and non-circulant mode pads on top. That is roughly 10x the input,
 so a 50 GB image wants 500 GB, and the GPU has 24.
 
 Deep-learning inference has the same shape -- a UNet's activations dwarf the
-patch -- and a detector adds a second reason to tile, scale (case 4 in the
-README), which has nothing to do with memory.
+patch -- and a detector adds a second reason to tile, scale, which has
+nothing to do with memory. Four cases:
+
+1. **Lazy input, too big for RAM.** A zarr or dask array that cannot be
+   read into memory whole.
+2. **In memory, but the op's copies are too big for RAM.** A 5 GB array and
+   an op that needs 8x the input.
+3. **In memory, but too big for the GPU.** A 50 GB image, and deconvolution
+   needing 400 GB on a 24 GB GPU.
+4. **Fits, but too big for the model's scale.** A detector resizes its input
+   to `imgsz`, so a 10000 x 10000 image squashed to 640 loses its small
+   objects, however much memory there is.
 
 The fix in every case: cut the input into tiles, run the op on each, put the
 results back together. The tiling loop is generic. What differs per op is
@@ -344,7 +355,7 @@ And four things they do that this design should avoid:
 
 ## Related
 
-- [examples.md](examples.md) -- gaussian, decon and YOLO, declared in full.
+- [tiling-examples.md](tiling-examples.md) -- gaussian, decon and YOLO, declared in full.
 - [0014](../0014-make-decon-ops.md) -- Richardson-Lucy, the motivating op.
 - [0006](../0006-axis-mapping.md) -- an op declaring something about its
   inputs and the caller acting on it.

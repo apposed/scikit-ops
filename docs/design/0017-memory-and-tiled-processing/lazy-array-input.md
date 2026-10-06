@@ -3,7 +3,7 @@
 Status: proposed. Nothing here is built.
 
 Background for case 1 of [0017](README.md): the input is lazy and too big
-for RAM. The decision is summarised in [design.md](design.md); this is the
+for RAM. The decision is summarised in [tiling.md](tiling.md); this is the
 alternatives and the proxy in detail.
 
 ## The problem
@@ -63,7 +63,7 @@ it keeps its own checks.
 
 What happens to each kind of op when it is chunked -- overlap, global ops,
 labels, detectors, axes that stay whole -- is the same as for any tiling,
-and is in [design.md](design.md).
+and is in [tiling.md](tiling.md).
 
 ## Cross-environment lazy array
 

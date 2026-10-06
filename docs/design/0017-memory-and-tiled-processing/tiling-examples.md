@@ -1,6 +1,6 @@
-# 0017 examples — three ops, declared in full
+# 0017 tiling examples — three ops, declared in full
 
-Three real ops in skop, with the declarations [design.md](design.md)
+Three real ops in skop, with the declarations [tiling.md](tiling.md)
 proposes. The parameter annotations are the kind skop has today -- `ImageOf`,
 `Axes`, widget ranges -- and the tiling arguments on `@op` are new: none of
 that syntax exists yet; it is a sketch to argue with. The numbers are counted
@@ -88,7 +88,7 @@ def richardson_lucy_cupy(
   `noncirc` the tile is padded by the PSF and rounded up to a fast FFT size,
   so the multiple of the *unpadded* tile depends on the tile -- level 3, a
   formula. `padded_size` and `size` are skop helpers, pure Python, so the
-  formula runs on the host without cupy (design.md, "Formulas run on the
+  formula runs on the host without cupy (tiling.md, "Formulas run on the
   host"). clij2-fft says 11x and tnia-python 41x for the same algorithm,
   which is why this should be measured.
 - **Budget is VRAM**, not RAM.
@@ -98,7 +98,7 @@ def richardson_lucy_cupy(
 ## YOLO: a detector that tiles itself
 
 `skop.ops.detect.yolo` (env `pytorch`). Unlike the two above, the op does
-the tiling, so it can batch tiles through the model (design.md, "Ops that
+the tiling, so it can batch tiles through the model (tiling.md, "Ops that
 tile themselves"). Its signature today:
 
 ```python
@@ -136,7 +136,7 @@ def yolo(
 ### The same op on a lazy image
 
 `ImageData` is numpy, so today the whole image must fit in RAM, and a bigger
-one would need the runner to tile it on the outside too (design.md, "Two
+one would need the runner to tile it on the outside too (tiling.md, "Two
 levels"). Typed on `Array`, it would not:
 
 ```python
