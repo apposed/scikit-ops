@@ -11,6 +11,12 @@ same-class duplicates using intersection over the smaller box, preferring
 whole boxes over fragments on internal tile edges. The general runner design
 and tiled SAM below remain proposals.
 
+Batch calibration now excludes model warm-up and uses reserved CUDA memory,
+including allocator overhead. Intermediate sizes and real batch peaks refine
+the estimate, while OOM retries tighten the upper bound and allow later growth.
+A single preparation thread fills the next CPU batch during inference; CUDA
+uses pinned buffers, and the direct model/NMS path copies only detections back.
+
 **Tiling is not optional for detectors.** There are two separate reasons to
 tile, and only the first one is about memory.
 

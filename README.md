@@ -101,9 +101,13 @@ outside 0.1%-50% of the image select square tiles with side
 `ceil(sqrt(1.5 * object_size / 0.001))`. Input size comes from the checkpoint.
 Tiles align with the image edges, and class-aware suppression removes duplicate
 and truncated boxes, preferring boxes seen whole in an overlapping tile.
-GPU batches use the measured single-tile memory cost and shrink on an
-out-of-memory error. CUDA has a peak counter; MPS uses sampled driver memory.
-The image must fit in host RAM; only the current resized batch enters the GPU.
+GPU batches are calibrated after warm-up, with intermediate sizes before
+larger batches. Measured peaks adjust the size up or down; an out-of-memory
+retry establishes an upper bound rather than permanently halving throughput.
+CUDA measures the reserved allocator footprint; MPS samples driver memory.
+One CPU batch is prepared ahead of inference, using pinned buffers for CUDA.
+Inference transfers only detection data back to the host. The image must fit
+in host RAM; only the current resized batch enters the GPU.
 
 ## Writing an op
 

@@ -36,9 +36,9 @@ def yolo(
         overlap: Fraction of a tile shared with its neighbour. The final
             tile along each axis is shifted back to meet the image edge.
         gpu_fraction: Fraction of free memory after loading the model to
-            budget for batches. CUDA uses a single-tile allocation peak;
-            MPS samples driver memory against its recommended working set
-            and available system RAM. An out-of-memory batch is halved.
+            budget for batches after warm-up. Actual batch peaks adjust the
+            batch size up or down; out-of-memory batches are halved. MPS
+            samples driver memory against its recommended working set.
         conf: Minimum detection confidence.
         iou: Per-tile NMS IoU threshold. Across tiles this is the intersection
             over smaller box threshold, which also removes cropped duplicates.
@@ -54,14 +54,23 @@ def yolo(
     aspect ratio without allocating a large padded image. The input itself
     must fit in host memory; this is not an out-of-core runner.
     """
+    import contextvars
     import gc
     import math
     import threading
+    from concurrent.futures import ThreadPoolExecutor
 
     import cv2
     import numpy as np
+    import psutil
     import torch
     from ultralytics import YOLO
+
+    # Ultralytics moved NMS out of ops during the 8.3 series.
+    try:
+        from ultralytics.utils.nms import non_max_suppression
+    except ImportError:
+        from ultralytics.utils.ops import non_max_suppression
 
     if not Path(weights).is_file() or Path(weights).suffix.lower() != ".pt":
         raise ValueError("weights must name an existing YOLO .pt file")
@@ -98,30 +107,78 @@ def yolo(
     stride = int(model.model.stride.max())
     imgsz = math.ceil(imgsz / stride) * stride
 
-    def infer(coords):
-        inputs = np.full((len(coords), 3, imgsz, imgsz), 114, dtype=np.uint8)
+    def prepare(coords):
+        inputs = torch.empty(
+            (len(coords), 3, imgsz, imgsz),
+            dtype=torch.float32,
+            pin_memory=device.startswith("cuda"),
+        )
+        pixels = inputs.numpy()
+        pixels.fill(114 / 255)
         scales = []
         for slot, (y, x) in enumerate(coords):
+            if cancel_requested():
+                raise RuntimeError("YOLO cancelled")
             crop = to_rgb(image[y : y + side, x : x + side])
             h, w = crop.shape[:2]
             rh, rw = max(1, round(h * imgsz / side)), max(1, round(w * imgsz / side))
-            inputs[slot, :, :rh, :rw] = cv2.resize(crop, (rw, rh)).transpose(2, 0, 1)
+            np.multiply(
+                cv2.resize(crop, (rw, rh)).transpose(2, 0, 1),
+                1 / 255,
+                out=pixels[slot, :, :rh, :rw],
+            )
             scales.append((rw / w, rh / h))
-        inputs = torch.from_numpy(inputs).float().div_(255)
-        results = model.predict(
-            inputs,
-            device=device,
-            imgsz=imgsz,
-            conf=conf,
-            iou=iou,
-            max_det=max_det,
-            batch=len(coords),
-            verbose=False,
-            save=False,
-        )
+        return inputs, coords, scales
+
+    def infer(prepared, profile=False):
+        inputs, coords, scales = prepared
+        peak = [baseline]
+        stop = threading.Event()
+
+        def sample_memory():
+            while not stop.wait(0.001):
+                peak[0] = max(peak[0], gpu.driver_allocated_memory())
+
+        monitor = None
+        if profile:
+            if device.startswith("cuda"):
+                gpu.reset_peak_memory_stats()
+            else:
+                peak[0] = gpu.driver_allocated_memory()
+                monitor = threading.Thread(target=sample_memory)
+                monitor.start()
+        try:
+            with torch.inference_mode():
+                outputs = non_max_suppression(
+                    model.model(
+                        inputs.to(device, non_blocking=device.startswith("cuda"))
+                    ),
+                    conf_thres=conf,
+                    iou_thres=iou,
+                    max_det=max_det,
+                    nc=len(model.names),
+                )
+                counts = [len(boxes) for boxes in outputs]
+                # Copy detections once; skip predict()'s image/Results conversion.
+                rows = torch.cat([boxes[:, :6] for boxes in outputs]).cpu().numpy()
+            if profile:
+                gpu.synchronize()
+                peak[0] = (
+                    gpu.max_memory_reserved()
+                    if device.startswith("cuda")
+                    else max(peak[0], gpu.driver_allocated_memory())
+                )
+        finally:
+            stop.set()
+            if monitor is not None:
+                monitor.join()
+
         found = []
-        for result, (y, x), (sx, sy) in zip(results, coords, scales):
-            boxes = result.boxes.data[:, :6].cpu().numpy().copy()
+        for boxes, (y, x), (sx, sy) in zip(
+            np.split(rows, np.cumsum(counts)[:-1]),
+            coords,
+            scales,
+        ):
             # Prefer an overlapping tile's full box to a cut-off edge box.
             partial = (
                 ((boxes[:, 0] <= 1) & (x > 0))
@@ -144,88 +201,120 @@ def yolo(
             found.append(
                 boxes[(boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1])]
             )
-        # The predictor holds its last results, including GPU tensors.
-        model.predictor.results = None
-        return found
+        return found, max(peak[0] - baseline, inputs.numel() * inputs.element_size())
 
+    baseline = 0
     try:
         model.to(device)
-        if gpu is not None:
+        model.model.fuse(verbose=False).eval().float()
+        progress(f"Warming model on the first of {len(origins)} tiles ({side} px)")
+        found, _ = infer(prepare(origins[:1]))
+        batch_size, best_size, batch_limit = 1, 1, len(origins)
+        if gpu is not None and len(origins) > 1:
+            # Keep setup costs resident, but return unused activation caches.
             gpu.synchronize()
             gpu.empty_cache()
-        if device.startswith("cuda"):
-            free, _ = gpu.mem_get_info()
-            baseline = gpu.memory_allocated()
-            gpu.reset_peak_memory_stats()
-        elif device == "mps":
-            import psutil
-
-            baseline = gpu.driver_allocated_memory()
-            free = min(
-                gpu.recommended_max_memory() - baseline,
-                psutil.virtual_memory().available,
-            )
-
-        peak = [baseline if gpu is not None else 0]
-        stop = threading.Event()
-
-        def sample_memory():
-            while not stop.wait(0.001):
-                peak[0] = max(peak[0], gpu.driver_allocated_memory())
-
-        monitor = threading.Thread(target=sample_memory) if device == "mps" else None
-        if monitor is not None:
-            monitor.start()
-        try:
-            if cancel_requested():
-                raise RuntimeError("YOLO cancelled")
-            progress(f"Profiling one of {len(origins)} tiles ({side} px)")
-            found = infer(origins[:1])
-            if gpu is not None:
-                gpu.synchronize()
-            if device == "mps":
-                peak[0] = max(peak[0], gpu.driver_allocated_memory())
-        finally:
-            stop.set()
-            if monitor is not None:
-                monitor.join()
-
-        batch_size = 1
-        if gpu is not None and len(origins) > 1:
             if device.startswith("cuda"):
-                peak[0] = gpu.max_memory_allocated()
-            per_tile = max(peak[0] - baseline, 3 * imgsz * imgsz * 4)
-            batch_size = min(
-                len(origins) - 1, max(1, int(gpu_fraction * free / per_tile))
+                baseline = gpu.memory_reserved()
+                free, _ = gpu.mem_get_info()
+            else:
+                baseline = gpu.driver_allocated_memory()
+                free = min(
+                    gpu.recommended_max_memory() - baseline,
+                    psutil.virtual_memory().available,
+                )
+            budget = gpu_fraction * free
+            # Current and prefetched batches coexist in host memory.
+            batch_limit = min(
+                batch_limit,
+                max(
+                    1,
+                    int(
+                        0.9
+                        * psutil.virtual_memory().available
+                        / (2 * 3 * imgsz * imgsz * 4)
+                    ),
+                ),
             )
-        progress(
-            f"Detecting {len(origins)} tiles, batch size {batch_size}", 1, len(origins)
-        )
 
         done = 1
-        while done < len(origins):
-            if cancel_requested():
-                raise RuntimeError("YOLO cancelled")
-            coords = origins[done : done + batch_size]
-            try:
-                batch = infer(coords)
-            except RuntimeError as exc:
-                if (
-                    gpu is None
-                    or len(coords) == 1
-                    or "out of memory" not in str(exc).lower()
-                ):
-                    raise
-                batch_size = max(1, len(coords) // 2)
-                progress(f"Retrying with batch size {batch_size}")
-            else:
-                found.extend(batch)
-                done += len(coords)
-                progress(f"Detected {done} of {len(origins)} tiles", done, len(origins))
-                continue
-            # The exception's traceback has now released the failed inputs.
-            model.predictor.results = None
-            gpu.empty_cache()
+        with ThreadPoolExecutor(max_workers=1) as loader:
+
+            def submit(start, count):
+                return loader.submit(
+                    contextvars.copy_context().run,
+                    prepare,
+                    origins[start : start + count],
+                )
+
+            current = submit(done, batch_size) if done < len(origins) else None
+            while current is not None:
+                if cancel_requested():
+                    current.cancel()
+                    raise RuntimeError("YOLO cancelled")
+                prepared = current.result()
+                if len(prepared[1]) > batch_size:
+                    prepared = tuple(part[:batch_size] for part in prepared)
+                count = len(prepared[1])
+                next_start = done + count
+                pending = (
+                    submit(next_start, batch_size)
+                    if next_start < len(origins)
+                    else None
+                )
+                try:
+                    batch, used = infer(prepared, profile=gpu is not None)
+                except RuntimeError as exc:
+                    if (
+                        gpu is None
+                        or count == 1
+                        or "out of memory" not in str(exc).lower()
+                    ):
+                        raise
+                    if pending is not None:
+                        pending.cancel()
+                    batch_limit = min(batch_limit, count - 1)
+                    best_size = min(best_size, batch_limit)
+                    batch_size = max(1, count // 2)
+                    progress(f"Retrying with batch size {batch_size}")
+                else:
+                    found.extend(batch)
+                    done += count
+                    if gpu is not None:
+                        # Feedback from real, warmed batches corrects the estimate.
+                        if used <= budget:
+                            best_size = max(best_size, count)
+                        else:
+                            batch_limit = min(batch_limit, max(1, count - 1))
+                            best_size = min(best_size, batch_limit)
+                        estimate = max(1, int(count * budget / used))
+                        # Small-batch allocator plans extrapolate poorly.
+                        if count < 32:
+                            estimate = min(estimate, max(8, count * 2))
+                        batch_size = min(batch_limit, estimate)
+                        if estimate > batch_limit and best_size < batch_limit:
+                            batch_size = (best_size + batch_limit + 1) // 2
+                        if batch_size != count:
+                            gpu.empty_cache()
+                        progress(
+                            f"Detected {done} of {len(origins)} tiles; "
+                            f"batch {count}, peak {used / 2**20:.0f} MiB, next {batch_size}",
+                            done,
+                            len(origins),
+                        )
+                    else:
+                        progress(
+                            f"Detected {done} of {len(origins)} tiles",
+                            done,
+                            len(origins),
+                        )
+                    del prepared
+                    current = pending
+                    continue
+                # Drop failed-batch tracebacks before releasing the GPU cache.
+                del prepared
+                gpu.empty_cache()
+                current = submit(done, batch_size)
 
         detections = np.concatenate(found)
         areas = (detections[:, 2] - detections[:, 0]) * (
