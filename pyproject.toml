@@ -123,13 +123,13 @@ line-length = 88
 extend-exclude = ["src/skop/ops/segment/unseg/_algorithm.py"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["skop"]
+known-first-party = ["skop", "opspec"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "opspec/tests"]
 addopts = "--strict-markers"
 markers = [
     "env(env_id): needs op environment <env_id>; skipped unless it is already built or --build-envs is passed",

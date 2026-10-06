@@ -33,8 +33,8 @@ class Array(Protocol):
     ``LayerDataProtocol`` is similar.
 
     ``__array__`` is absent: cupy defines it and raises, so
-    testing for it passes and the conversion then fails. 
-    
+    testing for it passes and the conversion then fails.
+
     Potentially converting between array libraries belongs to a runner.
 
     This is what a plugin uses, A host can define it's own (ie napari define LayerDataProtocol).

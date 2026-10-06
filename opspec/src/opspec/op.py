@@ -271,12 +271,131 @@ def direction_of(annotation: Any) -> _Direction | None:
     return None
 
 
+# -- workflows: parameters that hold other ops --------------------------
+
+
+@dataclass(frozen=True, init=False)
+class Choices:
+    """A curated list of the ops a parameter may be filled with.
+
+    Attached to a ``Callable`` parameter of a workflow, so that a front end can
+    offer a combo box rather than asking someone to type an import path::
+
+        psf_op: Annotated[Callable, Choices(gaussian=gaussian_psf,
+                                            gibson_lanni=gibson_lanni)]
+
+    The keyword names are the menu labels: "gpu" is a better thing to show a
+    researcher than ``richardson_lucy_cupy``.
+
+    **The list constrains the GUI, not the function.** Passing an op that is
+    not in it stays legal, because that is how the list grows -- someone tries
+    an untested solver in a script, it works, and it gets added here where the
+    change can be reviewed. Curated rather than discovered for the same reason:
+    a list means "I have tested these", where an inventory means only "these
+    are installed".
+    """
+
+    options: tuple[tuple[str, Callable], ...]
+
+    def __init__(self, **options: Callable) -> None:
+        object.__setattr__(self, "options", tuple(options.items()))
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return tuple(label for label, _ in self.options)
+
+    def op(self, label: str) -> Callable:
+        """The op a label names."""
+        return dict(self.options)[label]
+
+    def label(self, fn: Callable) -> str | None:
+        """What this list calls *fn*, if it lists it at all."""
+        return next((label for label, op in self.options if op is fn), None)
+
+    @property
+    def ids(self) -> tuple[tuple[str, str], ...]:
+        """``(label, "module:function")`` pairs.
+
+        The view that survives going over a wire: a Fiji front end needs the
+        menu without needing the Python objects behind it. So it also has to
+        survive coming *back* -- a ``Choices`` rebuilt from its wire form holds
+        the IDs themselves, since the functions they name are not importable in
+        the process that read them, and an ID passed through unchanged is what
+        makes this property the fixed point it claims to be. ``op()`` and
+        ``label()`` want live objects and are unavailable on such a one.
+        """
+        return tuple(
+            (label, op if isinstance(op, str) else f"{op.__module__}:{op.__name__}")
+            for label, op in self.options
+        )
+
+
+@dataclass(frozen=True, init=False)
+class ParamsFor:
+    """Marks a parameter as holding the arguments of a chosen op.
+
+    A chooser needs somewhere to put the chosen op's own settings, and a plain
+    dict is that somewhere::
+
+        decon_op: Annotated[Callable, Choices(cpu=..., gpu=...)] = richardson_lucy
+        decon_args: Annotated[dict, ParamsFor("decon_op",
+                                              binds=("image", "psf"))] = None
+
+    ``binds`` names the sub-op parameters the workflow supplies itself, from
+    its own inputs or from an earlier stage's output. A front end renders every
+    *other* parameter of the chosen op and leaves these alone -- which is what
+    stops two stages that both take an image from asking for it twice.
+
+    It is declared rather than inferred. Matching on name would hide the image
+    for free but still not know that a mask generator's ``boxes`` come from the
+    detector, and a rule that covers half the cases is harder to explain than
+    no rule at all.
+    """
+
+    chooser: str
+    binds: tuple[str, ...]
+
+    def __init__(self, chooser: str, *, binds: Any = ()) -> None:
+        # A lone string is the common case and iterating it would bind one
+        # parameter per letter, so take it as the single name it obviously is.
+        if isinstance(binds, str):
+            binds = (binds,)
+        object.__setattr__(self, "chooser", chooser)
+        object.__setattr__(self, "binds", tuple(binds))
+
+
+def choices_of(annotation: Any) -> Choices | None:
+    """Read a ``Choices`` off an annotation, or ``None``."""
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, Choices):
+                return meta
+    return None
+
+
+def params_for_of(annotation: Any) -> ParamsFor | None:
+    """Read a ``ParamsFor`` off an annotation, or ``None``."""
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, ParamsFor):
+                return meta
+    return None
+
+
 @dataclass(frozen=True)
 class _OpConfig:
     env: str | None
+    main_thread: bool = False
+    exclusive: bool = False
 
 
-def op(fn: Callable | None = None, *, env: str | None = None) -> Callable:
+def op(
+    fn: Callable | None = None,
+    *,
+    env: str | None = None,
+    main_thread: bool = False,
+    exclusive: bool = False,
+) -> Callable:
     """Declare a function as an op.
 
     Sets an attribute on the function and returns the same function, so
@@ -289,12 +408,16 @@ def op(fn: Callable | None = None, *, env: str | None = None) -> Callable:
         def deconvolve(image: ImageOf[cp.ndarray]) -> ImageOf[cp.ndarray]: ...
 
     Args:
-        env: Environment the op runs in. Omit it and the op runs wherever
-            the caller is.
+        env: Environment the op runs in. Omit it and the op has none: it
+            runs wherever the caller is. A workflow, an op that calls other
+            ops, is one of these.
+        main_thread: Whether the op must run on its worker's main thread.
+        exclusive: Whether the op needs a worker to itself, rather than
+            sharing one with other ops in the same environment.
     """
 
     def decorate(f: Callable) -> Callable:
-        f.__opspec__ = _OpConfig(env=env)
+        f.__opspec__ = _OpConfig(env=env, main_thread=main_thread, exclusive=exclusive)
         return f
 
     return decorate(fn) if fn is not None else decorate
@@ -305,7 +428,7 @@ def is_op(obj: Any) -> bool:
     return callable(obj) and isinstance(getattr(obj, "__opspec__", None), _OpConfig)
 
 
-def ui_hints_of(annotation: Any) -> dict:
+def _ui_hints(annotation: Any) -> dict:
     """Collect dict metadata off an annotation: widget hints for a host::
 
         sigma: Annotated[float, {"min": 0.1, "max": 10.0}] = 2.0
@@ -500,6 +623,10 @@ class ParamSpec:
     #: None for an input, OUT for a caller-allocated buffer, MUT for one the
     #: op modifies in place.
     direction: _Direction | None = None
+    #: The ops this parameter may be filled with, if it is a chooser.
+    choices: Choices | None = None
+    #: Which chooser's arguments this parameter carries, if any.
+    params_for: ParamsFor | None = None
 
     @property
     def required(self) -> bool:
@@ -521,6 +648,17 @@ class ParamSpec:
             data["ui"] = dict(self.ui)
         if self.direction is not None:
             data["direction"] = self.direction.name
+        if self.choices is not None:
+            # The ids view, not the options: a front end in another language
+            # needs the menu without needing the Python objects behind it.
+            data["choices"] = [
+                {"label": label, "op": op_id} for label, op_id in self.choices.ids
+            ]
+        if self.params_for is not None:
+            data["params_for"] = {
+                "chooser": self.params_for.chooser,
+                "binds": list(self.params_for.binds),
+            }
         return data
 
     @classmethod
@@ -543,7 +681,36 @@ class ParamSpec:
             axes=_axes_from_dict(data["axes"]) if data.get("axes") else None,
             ui=dict(data.get("ui", {})),
             direction={"Out": OUT, "Mut": MUT}.get(data.get("direction", "")),
+            choices=_choices_from_dict(data.get("choices")),
+            params_for=(
+                ParamsFor(
+                    data["params_for"]["chooser"],
+                    binds=tuple(data["params_for"].get("binds", ())),
+                )
+                if data.get("params_for")
+                else None
+            ),
         )
+
+
+def _choices_from_dict(data: list | None) -> Choices | None:
+    """Rebuild a Choices from its wire form.
+
+    The options come back as op *IDs* rather than functions, because the
+    functions are not importable in the process doing the reading -- that is
+    the whole reason the wire form exists. ``Choices.ids`` is therefore the
+    only view that survives the round trip, and it is the one a front end
+    uses; ``op()`` and ``label()`` want live objects and do not.
+    """
+    if not data:
+        return None
+    result = Choices()
+    object.__setattr__(
+        result,
+        "options",
+        tuple((entry["label"], entry["op"]) for entry in data),
+    )
+    return result
 
 
 @dataclass(frozen=True)
@@ -628,7 +795,7 @@ def _outputs_of(
     namespace = getattr(fn, "__globals__", None)
     try:
         hints = get_type_hints(return_type, globalns=namespace, include_extras=True)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any failure here just costs a role.
         hints = dict(getattr(return_type, "__annotations__", {}))
     return tuple(
         OutputSpec(name, _strip(hints.get(name)), role_of(hints.get(name)))
@@ -642,6 +809,8 @@ class OpSpec:
 
         spec = OpSpec.from_op(threshold)
         spec.return_role        # <Role.labels: 'labels'>
+
+    ``to_dict`` and ``from_dict`` carry it to another process or language.
     """
 
     name: str
@@ -654,12 +823,25 @@ class OpSpec:
     doc: str | None
     #: How the op computes: FUNCTION, COMPUTER or INPLACE.
     form: str = FUNCTION
+    #: Whether the op must run on its worker's main thread.
+    main_thread: bool = False
+    #: Whether the op needs a worker to itself.
+    exclusive: bool = False
 
     #: Set only when rebuilt from the wire, where the return type is a name
     #: rather than the live type the property below derives outputs from.
     _outputs: tuple[OutputSpec, ...] | None = field(
         default=None, repr=False, compare=False
     )
+
+    @property
+    def is_workflow(self) -> bool:
+        """Whether this op has no environment of its own.
+
+        It runs where the caller is. A workflow, an op that calls other ops,
+        is one: the ops it calls each bring their own environment.
+        """
+        return self.env is None
 
     @property
     def inputs(self) -> tuple[ParamSpec, ...]:
@@ -682,32 +864,49 @@ class OpSpec:
         return _outputs_of(self.return_type, self.return_role)
 
     def to_dict(self) -> dict:
-        """A JSON-safe form, for the trip to another process or language."""
+        """A JSON-safe form, for the trip to another process or language.
+
+        ``outputs`` is written out rather than left to be derived, because
+        deriving it needs the live return type -- a NamedTuple's fields --
+        which does not cross the boundary.
+        """
         return {
             "name": self.name,
             "module": self.module,
             "function": self.function,
             "env": self.env,
+            "main_thread": self.main_thread,
+            "exclusive": self.exclusive,
             "form": self.form,
             "params": [p.to_dict() for p in self.params],
+            "return_type": type_spec(self.return_type).to_dict(),
+            "return_role": self.return_role.value if self.return_role else None,
             "outputs": [o.to_dict() for o in self.outputs],
             "doc": self.doc,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> OpSpec:
-        outputs = tuple(OutputSpec.from_dict(o) for o in data.get("outputs", ()))
+        """Rebuild from the wire form.
+
+        Types come back as ``TypeSpec``s, not the Python types they were read
+        off; see ``ParamSpec.from_dict``.
+        """
         return cls(
             name=data["name"],
             module=data["module"],
             function=data["function"],
             env=data.get("env"),
             params=tuple(ParamSpec.from_dict(p) for p in data["params"]),
-            return_type=outputs[0].type if len(outputs) == 1 else None,
-            return_role=outputs[0].role if len(outputs) == 1 else None,
+            return_type=TypeSpec.from_dict(data["return_type"]),
+            return_role=(
+                Role(data["return_role"]) if data.get("return_role") else None
+            ),
             doc=data.get("doc"),
             form=data.get("form", FUNCTION),
-            _outputs=outputs,
+            main_thread=bool(data.get("main_thread", False)),
+            exclusive=bool(data.get("exclusive", False)),
+            _outputs=tuple(OutputSpec.from_dict(o) for o in data.get("outputs", ())),
         )
 
     @classmethod
@@ -715,8 +914,13 @@ class OpSpec:
         """Read the spec off a decorated op.
 
         Annotations are resolved here rather than at decoration time, so an
-        op may refer to types defined later in its own module.
+        op may refer to types defined later in its own module. The result is
+        kept on the function, so a spec is read once.
         """
+        cached = getattr(fn, "__opspec_spec__", None)
+        if cached is not None:
+            return cached
+
         config = getattr(fn, "__opspec__", None)
         if not isinstance(config, _OpConfig):
             raise TypeError(f"Not an op: {fn!r} (missing @op decorator)")
@@ -726,6 +930,10 @@ class OpSpec:
 
         params = []
         for name, param in signature.parameters.items():
+            if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
+                raise TypeError(
+                    f"Op {fn.__qualname__} may not declare *args or **kwargs: {name}"
+                )
             annotation = hints.get(name, param.annotation)
             params.append(
                 ParamSpec(
@@ -734,8 +942,10 @@ class OpSpec:
                     default=param.default,
                     role=role_of(annotation),
                     axes=axes_of(annotation),
-                    ui=ui_hints_of(annotation),
+                    ui=_ui_hints(annotation),
                     direction=direction_of(annotation),
+                    choices=choices_of(annotation),
+                    params_for=params_for_of(annotation),
                 )
             )
 
@@ -744,7 +954,13 @@ class OpSpec:
             raise TypeError(
                 f"Op {fn.__qualname__} mixes Out and Mut params; pick one form"
             )
-        form = COMPUTER if OUT in directions else INPLACE if MUT in directions else FUNCTION
+        form = (
+            COMPUTER
+            if OUT in directions
+            else INPLACE
+            if MUT in directions
+            else FUNCTION
+        )
 
         returns = hints.get("return", signature.return_annotation)
         # A computer- or inplace-form op names its outputs with its buffers;
@@ -759,7 +975,7 @@ class OpSpec:
         )
         # A function defined by exec has no module; name it for what it is.
         module = fn.__module__ or "__script__"
-        return cls(
+        result = cls(
             name=f"{module}:{fn.__name__}",
             module=module,
             function=fn.__name__,
@@ -769,5 +985,9 @@ class OpSpec:
             return_role=role_of(returns),
             doc=inspect.getdoc(fn),
             form=form,
+            main_thread=config.main_thread,
+            exclusive=config.exclusive,
             _outputs=outputs,
         )
+        fn.__opspec_spec__ = result
+        return result
