@@ -122,6 +122,11 @@ line-length = 88
 # Vendored upstream algorithm: keep it diffable against its source.
 extend-exclude = ["src/skop/ops/segment/unseg/_algorithm.py"]
 
+[tool.ruff.format]
+# Code in a doc is an illustration, laid out to be read: aligned comments,
+# caret diagrams, compact sketches. Formatting it as code makes it worse.
+exclude = ["*.md"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["skop", "opspec"]
 
