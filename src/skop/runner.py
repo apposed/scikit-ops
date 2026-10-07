@@ -366,6 +366,7 @@ class Runner:
         on_progress: Callable[[Any], None] | None = None,
         on_start: Callable[[Any], None] | None = None,
         memory: int | str | None = None,
+        out: Any = None,
         **kwargs: Any,
     ) -> Any:
         """Run an op in its environment and return its result.
@@ -403,6 +404,12 @@ class Runner:
                 the budget is 85% of the memory available right now, cgroup
                 limits included (``skop._tiling.default_budget``); ``"off"``
                 never tiles. An op declaring no hints always runs whole.
+            out: Where an op's single array result is written, tiled or not:
+                an array that takes ``out[region] = values`` (numpy, zarr,
+                HDF5), or a function ``(shape, dtype) -> array`` that makes
+                one once the result's dtype is known. Returned in place of a
+                new array. Left out, a tiled result too big for memory goes
+                to a temporary ``.npy`` memmap.
         """
         spec = _spec.OpSpec.from_op(fn)
         call_args = dict(args or {})
@@ -431,7 +438,7 @@ class Runner:
                         on_start=on_start,
                     )
 
-                return _tiling.run_tiles(one_tile, call_args[name], plan)
+                return _tiling.run_tiles(one_tile, call_args[name], plan, out)
 
         call_args = _to_declared(spec, call_args)
 
@@ -440,7 +447,7 @@ class Runner:
             # runs here, and the ops it calls each cross the boundary
             # themselves. Axis adaptation is skipped for the same reason --
             # the sub-ops adapt their own arrays.
-            return self._run_here(fn, call_args, on_progress, on_start)
+            return _into(out, self._run_here(fn, call_args, on_progress, on_start))
 
         adaptations = _adaptations(fn, call_args, axes, plans, position)
 
@@ -490,7 +497,7 @@ class Runner:
                 # the worker allocated for results.
                 _codec.release(out_refs, unlink=True)
 
-            return _unpack(spec, outputs, buffers)
+            return _into(out, _unpack(spec, outputs, buffers))
         finally:
             _codec.release(refs, unlink=True)
 
@@ -588,6 +595,20 @@ def _adapts(plan: _adapt.AdaptationPlan) -> bool:
     """
     identity = tuple(range(len(plan.transpose)))
     return bool(plan.iterate or plan.select) or tuple(plan.transpose) != identity
+
+
+def _into(out: Any, result: Any) -> Any:
+    """*result*, written into *out* when the caller gave one."""
+    if out is None:
+        return result
+    if isinstance(result, tuple):
+        raise TypeError(
+            f"out takes a single array, and this op returned {len(result)} values"
+        )
+    array = np.asarray(result)
+    target = _tiling.prepare_out(out, array.shape, array.dtype)
+    target[...] = array
+    return target
 
 
 def tile_plan(spec: _spec.OpSpec, args: dict, memory: int | str) -> TilePlan:

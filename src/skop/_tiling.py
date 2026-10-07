@@ -24,7 +24,7 @@ import numpy as np
 
 from opspec.tiling import TilePlan
 
-__all__ = ["DEFAULT_FRACTION", "default_budget", "run_tiles"]
+__all__ = ["DEFAULT_FRACTION", "default_budget", "prepare_out", "run_tiles"]
 
 #: The share of the memory free right now that an op may have by default.
 DEFAULT_FRACTION = 0.85
@@ -79,17 +79,21 @@ def _cgroup_headroom(
         group = group.parent
 
 
-def run_tiles(call: Callable[[np.ndarray], Any], image: Any, plan: TilePlan) -> Any:
+def run_tiles(
+    call: Callable[[np.ndarray], Any], image: Any, plan: TilePlan, out: Any = None
+) -> Any:
     """Call *call* on each tile of *image*, and put the results together.
 
     Args:
         call: Runs the op on one tile, given as numpy, and returns its result.
         image: The whole input: numpy, or anything that slices into numpy.
         plan: From ``opspec.tiling.plan_tiles``.
+        out: Where the result goes; see ``prepare_out``.
 
     Returns:
-        The whole result: a numpy array when it fits the plan's budget, and
-        otherwise a ``numpy.memmap`` backed by a temporary ``.npy`` file.
+        The whole result: *out*, if given. Otherwise a numpy array when it
+        fits beside the tiles in the budget, and a ``numpy.memmap`` backed by
+        a temporary ``.npy`` file when it does not.
     """
     output = None
     for number, tile in enumerate(plan.tiles, 1):
@@ -101,7 +105,9 @@ def run_tiles(call: Callable[[np.ndarray], Any], image: Any, plan: TilePlan) -> 
                 f"{result.shape} for an input of shape {piece.shape}. Cropping "
                 "tiles back together needs a result the shape of its input."
             )
-        if output is None:
+        if output is None and out is not None:
+            output = prepare_out(out, plan.shape, result.dtype)
+        elif output is None:
             # The tiles' own cost is already planned into the budget; the
             # whole output stays in memory only if it fits beside that.
             output = _allocate(plan.shape, result.dtype, plan.budget - plan.peak)
@@ -109,6 +115,23 @@ def run_tiles(call: Callable[[np.ndarray], Any], image: Any, plan: TilePlan) -> 
     if isinstance(output, np.memmap):
         output.flush()
     return output
+
+
+def prepare_out(out: Any, shape: tuple[int, ...], dtype: Any) -> Any:
+    """The array a result is written into, from what a caller passed as *out*.
+
+    *out* is anything that takes ``out[region] = values`` -- numpy, a zarr
+    array, an HDF5 dataset -- or a function ``(shape, dtype) -> array`` that
+    makes one, for a caller that cannot know the result's dtype until there
+    is one. Which kind of array is the caller's business; this only checks
+    that the shape is the result's.
+    """
+    target = out(shape, dtype) if callable(out) else out
+    if tuple(target.shape) != tuple(shape):
+        raise ValueError(
+            f"out has shape {tuple(target.shape)}, but the result's is {tuple(shape)}"
+        )
+    return target
 
 
 def _allocate(shape: tuple[int, ...], dtype: Any, room: int) -> np.ndarray:

@@ -99,3 +99,44 @@ def test_a_plan_that_changes_nothing_does_not_stop_tiling():
             gaussian, image=data, sigma=1.5, memory="200K", plans={"image": plan}
         )
     assert tiled.shape == data.shape
+
+
+def test_tiles_are_written_into_the_callers_array():
+    data = image()
+    plan = plan_tiles(data.shape, data.dtype, PeakMemory(8), "40K", overlap=RADIUS)
+    out = np.zeros(data.shape)
+    assert run_tiles(box_filter, data, plan, out) is out
+    assert np.array_equal(out, box_filter(data))
+
+
+def test_out_may_be_made_once_the_dtype_is_known():
+    data = image()
+    plan = plan_tiles(data.shape, data.dtype, PeakMemory(8), "40K", overlap=RADIUS)
+    made = []
+
+    def make(shape, dtype):
+        made.append((shape, np.dtype(dtype)))
+        return np.empty(shape, dtype)
+
+    run_tiles(box_filter, data, plan, make)
+    assert made == [(data.shape, np.dtype(np.float64))]
+
+
+def test_an_out_of_the_wrong_shape_is_refused():
+    data = image()
+    plan = plan_tiles(data.shape, data.dtype, PeakMemory(8), "40K", overlap=RADIUS)
+    with pytest.raises(ValueError, match="out has shape"):
+        run_tiles(box_filter, data, plan, np.zeros((3, 3)))
+
+
+@pytest.mark.env("skimage")
+def test_out_is_filled_whether_or_not_the_run_is_tiled():
+    from skop.ops.smooth import gaussian
+
+    data = image((24, 60, 80))
+    with skop.Runner() as runner:
+        for memory in ("200K", "off"):
+            out = np.zeros(data.shape, np.float32)
+            result = runner.run(gaussian, image=data, memory=memory, out=out)
+            assert result is out
+            assert out.any()
