@@ -16,7 +16,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from ._pad import get_next_smooth, pad, pad_to_largest, unpad
+from ._pad import get_next_smooth, pad, pad_psf, pad_to_largest, unpad
 
 
 class Padded(NamedTuple):
@@ -81,7 +81,7 @@ def pad_and_mask(
         )
         image, _ = pad(image, extended, "constant")
         htones, _ = pad(htones, extended, "constant")
-        psf, _ = pad(psf, extended, "constant")
+        psf = pad_psf(psf, extended)
     elif image.shape != psf.shape:
         # NB: the numpy original padded the psf up to the image, which
         # truncates a psf wider than the image. Both backends now pad each to

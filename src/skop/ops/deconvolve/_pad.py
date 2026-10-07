@@ -80,12 +80,28 @@ def pad(img: np.ndarray, paddedsize, mode: str):
     return np.pad(img, padding, mode), padding
 
 
+def pad_psf(psf: np.ndarray, paddedsize) -> np.ndarray:
+    """Pad a PSF with zeros up to ``paddedsize``, its centre where FFTs want it.
+
+    The centre, index ``n // 2`` of the PSF, goes to index ``N // 2`` of the
+    padded array, which ``ifftshift`` then moves to 0. ``pad`` centres the
+    array instead, and for a PSF of even size that puts the centre half a
+    pixel off one way or the other depending on whether the padded size is
+    odd: the result shifts by a pixel. Untiled, every run shifts the same way;
+    tiled, tiles of different sizes disagree, by 20% or more on sharp points.
+    """
+    padding = tuple(
+        (big // 2 - small // 2, big - small - (big // 2 - small // 2))
+        for big, small in zip(paddedsize, psf.shape)
+    )
+    return np.pad(psf, padding, "constant")
+
+
 def pad_to_largest(img: np.ndarray, psf: np.ndarray, mode: str):
     """Pad both arrays so each axis matches the larger of the two."""
     largest = tuple(max(i, p) for i, p in zip(img.shape, psf.shape))
     img, _ = pad(img, largest, mode)
-    psf, _ = pad(psf, largest, mode)
-    return img, psf
+    return img, pad_psf(psf, largest)
 
 
 def unpad(padded, imgsize):

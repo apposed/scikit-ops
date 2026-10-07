@@ -13,6 +13,7 @@ from skop.ops.deconvolve._pad import (
     get_next_smooth,
     next_smooth,
     pad,
+    pad_psf,
     pad_to_largest,
     unpad,
 )
@@ -77,3 +78,26 @@ def test_pad_to_largest_takes_the_max_of_each_axis():
     assert image.shape == psf.shape == (16, 12)
     assert image.sum() == 16 * 4
     assert psf.sum() == 8 * 12
+
+
+@pytest.mark.parametrize("psf_size", [8, 9])
+@pytest.mark.parametrize("padded_size", [30, 31])
+def test_a_padded_psf_has_its_centre_at_zero_after_ifftshift(psf_size, padded_size):
+    # Odd or even, the same: else tiles padded to different sizes are
+    # deconvolved one pixel apart.
+    psf = np.zeros((psf_size, psf_size))
+    psf[psf_size // 2, psf_size // 2] = 1
+    shifted = np.fft.ifftshift(pad_psf(psf, (padded_size, padded_size)))
+    assert shifted[0, 0] == 1
+
+
+def test_a_tile_of_a_deconvolution_matches_the_whole():
+    from skop.ops.deconvolve.richardson_lucy import richardson_lucy
+
+    rng = np.random.default_rng(0)
+    image = rng.random((8, 40, 60)) + 1
+    psf = np.ones((4, 8, 8)) / 256
+    whole = richardson_lucy(image, psf, num_iters=1, noncirc=True)
+    # 60 + 8 pads to 70, 37 + 8 to 45: one even, one odd.
+    tile = richardson_lucy(image[:, :, :37], psf, num_iters=1, noncirc=True)
+    np.testing.assert_allclose(tile[:, :, :29], whole[:, :, :29], rtol=1e-10)
