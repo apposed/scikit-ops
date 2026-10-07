@@ -1,12 +1,11 @@
-"""Interfaces for running ops. No implementation.
+"""Protocols:
 
-Two jobs, two Protocols:
+- ``Builder`` provides environments.
+- ``Runner`` calls ops and implements scaffolding like slicing, tiling,
+  calling appose for shared memory and environment management.
 
-- ``Builder`` provides environments. Slow, rare, needs progress.
-- ``Runner`` calls ops. One per call.
-
-Structural, so an existing class satisfies them by having the methods.
-It need not import opspec or inherit anything.
+Protocols, so an existing class satisfies them without explicitly
+inheriting from them.
 """
 
 from __future__ import annotations
@@ -18,14 +17,15 @@ __all__ = ["Builder", "Runner"]
 
 #: Importable now.
 READY = "ready"
+#: Built, but from an older definition. It runs, but may not be what the
+#: definition now says.
+STALE = "stale"
 #: Not here, but this builder can provide it.
 MISSING = "missing"
-#: Provided, but this process must restart to see it.
-RESTART_REQUIRED = "restart_required"
 #: This builder cannot provide it.
 UNAVAILABLE = "unavailable"
 
-STATUSES = (READY, MISSING, RESTART_REQUIRED, UNAVAILABLE)
+STATUSES = (READY, STALE, MISSING, UNAVAILABLE)
 
 
 @runtime_checkable
@@ -33,8 +33,7 @@ class Builder(Protocol):
     """Provides the environments ops ask for with ``env=``.
 
     An out-of-process builder solves and installs one. An in-process
-    builder may install into the interpreter it is running in, which is
-    what ``restart_required`` is for.
+    builder may install into the interpreter it is running in.
     """
 
     def environment_status(self, env_id: str) -> str:
@@ -80,10 +79,12 @@ class Runner(Protocol):
             plans: Ready-made plans, by parameter name, instead of ``axes``.
             position: Where to sit on each selected axis.
             on_progress: Called with progress events.
-            on_start: Called with the task, for cancelling.
+            on_start: Called with the task when it is submitted. This can be
+                used to get a reference to the running task, then the
+                reference can be used to monitor or cancel the task.
         """
         ...
 
     def close(self) -> None:
-        """Release whatever this runner holds."""
+        """Release the runner and free its resources."""
         ...

@@ -1,7 +1,8 @@
-"""What an op's data is: the array it takes, and what that array means.
+"""The Array protocol, and role aliases for op parameters.
 
-Standard library only, like the rest of opspec. numpy is named in op
-signatures, never imported here.
+A role is the meaning of an array: an image, labels, boxes. An op parameter
+states its role and its array type in one annotation, for example
+``ImageOf[np.ndarray]`` or ``LabelsOf[Array]``.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from typing import Annotated, Any, Protocol, TypeVar, runtime_checkable
 
 from .op import Role
 
+# The Array protocol, and one alias per role.
 __all__ = [
     "Array",
     "BoxesOf",
@@ -26,18 +28,18 @@ __all__ = [
 
 @runtime_checkable
 class Array(Protocol):
-    """
+    """Anything array-shaped, for an op that does not need numpy.
 
-    A subset of the Python array API standard, numpy,
-    cupy, dask, zarr and xarray all satisfy it. napari's
-    ``LayerDataProtocol`` is similar.
+    A subset of the Python array API standard. numpy, cupy, dask, zarr and
+    xarray all satisfy it.
 
-    ``__array__`` is absent: cupy defines it and raises, so
-    testing for it passes and the conversion then fails.
+    We purposely don't support ``__array__``, because converting an Array to
+    numpy is the runner's job.
 
-    Potentially converting between array libraries belongs to a runner.
+    This is what an op takes. A host may keep its own protocol, as napari
+    does with ``LayerDataProtocol``.
 
-    This is what a plugin uses, A host can define it's own (ie napari define LayerDataProtocol).
+    Todo: consider reusing a community array protocol.
     """
 
     @property
@@ -55,31 +57,28 @@ class Array(Protocol):
     def __getitem__(self, key: Any) -> Any: ...
 
 
-# The aliases below are templates: the role is fixed, the array type is
-# filled in by the op. `A` is the blank.
+# The aliases take the array type as a parameter, so an op can say which
+# array types it accepts:
 #
 #     ImageOf[np.ndarray]    numpy only
 #     ImageOf[cp.ndarray]    cupy only
-#     ImageOf[Array]         anything array-shaped
-#
-# `ImageOf[np.ndarray]` is exactly `Annotated[np.ndarray, Role.image]`, so
-# to anything not reading roles it is still a plain ndarray.
+#     ImageOf[Array]         any array that satisfies the Array protocol
 A = TypeVar("A")
 
-#: A picture: intensities to be displayed as such.
+#: An intensity image.
 ImageOf = Annotated[A, Role.image]
 
-#: A label image: integer object IDs, 0 for background.
+#: A label image: each object is one integer value, and 0 is background.
 LabelsOf = Annotated[A, Role.labels]
 
-#: A stack of binary masks, one object per plane. Unlike a label image
-#: these may overlap, which is why they are not one.
+#: A stack of binary masks, (N, Y, X), one object per plane. Unlike labels,
+#: masks may overlap.
 MasksOf = Annotated[A, Role.masks]
 
-#: Axis-aligned bounding boxes, as (N, 4): [min_y, min_x, max_y, max_x].
+#: Axis-aligned bounding boxes, (N, 4): [min_y, min_x, max_y, max_x].
 BoxesOf = Annotated[A, Role.boxes]
 
-#: Coordinates, as (N, D) in axis order matching the image they came from.
+#: Point coordinates, (N, D), in the image's axis order.
 PointsOf = Annotated[A, Role.points]
 
 #: Freeform shapes: polygons, lines, paths.
@@ -88,8 +87,8 @@ ShapesOf = Annotated[A, Role.shapes]
 #: A mesh: vertices, faces and values.
 SurfaceOf = Annotated[A, Role.surface]
 
-#: Trajectories, as (N, D+2): track ID, time, then coordinates.
+#: Trajectories, (N, D + 2): track ID, time, then coordinates.
 TracksOf = Annotated[A, Role.tracks]
 
-#: Displacements, as (N, 2, D): a start position and a projection.
+#: Displacements, (N, 2, D): a start position and a direction.
 VectorsOf = Annotated[A, Role.vectors]
