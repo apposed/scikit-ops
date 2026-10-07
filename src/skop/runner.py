@@ -412,7 +412,7 @@ class Runner:
         if memory != "off" and spec.tile and spec.peak_memory:
             if memory is None:
                 memory = _tiling.default_budget()
-            plan = _tile_plan(spec, call_args, memory)
+            plan = tile_plan(spec, call_args, memory)
             if plan.calls > 1:
                 if axes or any(_adapts(p) for p in (plans or {}).values()):
                     raise NotImplementedError(
@@ -590,8 +590,13 @@ def _adapts(plan: _adapt.AdaptationPlan) -> bool:
     return bool(plan.iterate or plan.select) or tuple(plan.transpose) != identity
 
 
-def _tile_plan(spec: _spec.OpSpec, args: dict, memory: int | str) -> TilePlan:
-    """How to cut this call to fit *memory*, from the op's tiling hints."""
+def tile_plan(spec: _spec.OpSpec, args: dict, memory: int | str) -> TilePlan:
+    """How ``Runner.run`` would cut this call to fit *memory*.
+
+    From the op's tiling hints, with the runner's own copies of each tile
+    counted. Public so a front end can say "8 tiles" before running, and be
+    sure of saying what the runner will do.
+    """
     if spec.merge not in (None, "crop"):
         raise NotImplementedError(
             f"Op {spec.name}: merging tiles by {spec.merge!r} is not implemented; "
