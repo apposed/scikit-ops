@@ -63,6 +63,11 @@ torchvision = "*"
 cellpose = ">=4.2"
 dinov3 = { git = "https://github.com/facebookresearch/dinov3" }
 
+# InstanSeg is plain torch, PyPI only. Since 0.1 its file readers (bioio,
+# rasterio, slideio) are an optional `io` extra, left out: the op is handed
+# an array. The base install is torch, numpy, scikit-image and small helpers.
+instanseg-torch = "*"
+
 # Note: pinned deliberately -- this is part of the environment's identity,
 # so bumping it rebuilds every environment. A checkout still shadows it,
 # because skop.host.INIT puts src at sys.path[0]. See
