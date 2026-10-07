@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import itertools
 import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -43,6 +44,9 @@ class _Event:
     message: str | None = None
     current: int | None = None
     maximum: int | None = None
+    #: (m, n) when a tiled run starts its tile m of n. The op's own progress
+    #: for that tile follows, as ordinary events.
+    tile: tuple[int, int] | None = None
 
 
 class _HostTask:
@@ -439,8 +443,19 @@ class Runner:
             # All the inputs in spec.tile are tiled the same way; one left out
             # of the call -- an optional mask -- stays None.
             inputs = {name: call_args.get(name) for name in spec.tile}
+            started = itertools.count(1)
 
             def one_tile(pieces: dict[str, Any]) -> Any:
+                number = next(started)
+                if on_progress is not None:
+                    on_progress(
+                        _Event(
+                            f"Tile {number} of {plan.calls}",
+                            number - 1,
+                            plan.calls,
+                            tile=(number, plan.calls),
+                        )
+                    )
                 return self.run(
                     fn,
                     {**call_args, **pieces},

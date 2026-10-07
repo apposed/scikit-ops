@@ -315,3 +315,19 @@ def test_a_workflow_passes_its_tiler_to_the_ops_it_runs():
         result = runner.run(calls_recorded, image=data, tiler=skop.Tiler(memory="40K"))
     assert len(SEEN) > 1 and all(shape != data.shape for shape in SEEN)
     assert np.array_equal(result, data)
+
+
+def test_a_tiled_run_says_which_tile_it_is_on():
+    events = []
+    data = image()
+    with skop.Runner() as runner:
+        runner.run(
+            recorded,
+            image=data,
+            tiler=skop.Tiler(memory="40K"),
+            on_progress=events.append,
+        )
+    tiles = [event.tile for event in events if getattr(event, "tile", None)]
+    count = tiles[0][1]
+    assert count > 1
+    assert tiles == [(m, count) for m in range(1, count + 1)]
