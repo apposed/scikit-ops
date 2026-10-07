@@ -7,6 +7,8 @@ needs a worker. ``test_runner.py`` covers the trip over the wire.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import numpy as np
 import pytest
 
@@ -88,6 +90,38 @@ def test_unstackable_output_says_so():
         _adapt._reassemble("op", "points", varying, (2,), skop.Role.points)
     with pytest.raises(TypeError, match="cannot be stacked"):
         _adapt._reassemble("op", "notes", ["a", "b"], (2,), None)
+
+
+@skop.op
+def masked_sum(
+    image: Annotated[np.ndarray, skop.Axes("y", "x")],
+    mask: Annotated[np.ndarray, skop.Axes("y", "x")],
+) -> float:
+    return float((image * mask).sum())
+
+
+def test_two_stacks_are_looped_over_together():
+    image = np.arange(3)[:, None, None] * np.ones((3, 4, 6))
+    mask = np.ones((3, 4, 6))
+    plans = {
+        name: plan_for(masked_sum, name, array, list("zyx"))
+        for name, array in (("image", image), ("mask", mask))
+    }
+    spec = skop.OpSpec.from_op(masked_sum)
+    sums = _adapt.execute(spec, masked_sum, {"image": image, "mask": mask}, plans)
+    # One call per z, each with that z of both: 0, 24, 48.
+    assert list(sums) == [0.0, 24.0, 48.0]
+
+
+def test_stacks_looped_over_together_must_match():
+    image, mask = np.ones((3, 4, 6)), np.ones((2, 4, 6))
+    plans = {
+        name: plan_for(masked_sum, name, array, list("zyx"))
+        for name, array in (("image", image), ("mask", mask))
+    }
+    spec = skop.OpSpec.from_op(masked_sum)
+    with pytest.raises(ValueError, match="as many slices"):
+        _adapt.execute(spec, masked_sum, {"image": image, "mask": mask}, plans)
 
 
 def test_no_plan_means_no_adaptation():

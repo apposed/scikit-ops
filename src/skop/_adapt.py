@@ -81,12 +81,6 @@ def execute(
         return fn(**args)
 
     iterated = [plan for plan in plans.values() if plan.iterate]
-    if len(iterated) > 1:
-        names = ", ".join(sorted(plan.param for plan in iterated))
-        raise ValueError(
-            f"Op {spec.name}: only one parameter may be iterated at a time, "
-            f"but plans iterate over {names}"
-        )
 
     for name, param_plan in plans.items():
         args[name] = apply(param_plan, np.asarray(args[name]))
@@ -94,7 +88,6 @@ def execute(
     if not iterated:
         return fn(**args)
 
-    plan = iterated[0]
     if spec.form != _spec.FUNCTION:
         raise ValueError(
             f"Op {spec.name} is {spec.form} form; iteration is implemented for "
@@ -102,8 +95,22 @@ def execute(
             "of the whole input rather than of one slice."
         )
 
-    stack = args[plan.param]
-    span = tuple(stack.shape[: len(plan.iterate)])
+    # Several inputs are looped over together, a slice of each per call -- a
+    # stack of nuclei and a stack of membranes, say -- so they must agree on
+    # how many slices there are.
+    stacks = {plan.param: args[plan.param] for plan in iterated}
+    spans = {
+        plan.param: tuple(stacks[plan.param].shape[: len(plan.iterate)])
+        for plan in iterated
+    }
+    if len(set(spans.values())) > 1:
+        shown = "; ".join(f"{name} {span}" for name, span in spans.items())
+        raise ValueError(
+            f"Op {spec.name}: inputs looped over together must have as many "
+            f"slices as each other, but they have {shown}"
+        )
+    plan = iterated[0]
+    span = spans[plan.param]
     labels = [_name(plan.input_axes, i) for i in plan.iterate]
     gathered: list[list] = [[] for _ in spec.outputs]
 
@@ -116,7 +123,8 @@ def execute(
         _progress.progress(
             f"Slice {step + 1} of {plan.calls} ({where})", step, plan.calls
         )
-        args[plan.param] = stack[index]
+        for name, stack in stacks.items():
+            args[name] = stack[index]
         for slot, value in enumerate(_split(spec, fn(**args))):
             gathered[slot].append(value)
 
