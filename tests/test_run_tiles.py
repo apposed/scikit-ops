@@ -82,3 +82,20 @@ def test_gaussian_tiled_through_a_runner_equals_gaussian_whole():
     assert len(lazy.reads) > 1
     assert max(lazy.reads) < lazy.size
     np.testing.assert_allclose(tiled, whole, rtol=0, atol=1e-5)
+
+
+@pytest.mark.env("skimage")
+def test_a_plan_that_changes_nothing_does_not_stop_tiling():
+    # A front end passes a plan for every input with declared axes; for a
+    # variadic op on a volume it passes every axis through, unsliced and in
+    # order, and tiling goes ahead.
+    from skop.ops.smooth import gaussian
+
+    data = image((24, 60, 80))
+    plan = skop.plan(gaussian, "image", data, list("zyx"))
+    assert not plan.iterate and not plan.select
+    with skop.Runner() as runner:
+        tiled = runner.run(
+            gaussian, image=data, sigma=1.5, memory="200K", plans={"image": plan}
+        )
+    assert tiled.shape == data.shape

@@ -414,7 +414,7 @@ class Runner:
         if memory is not None and spec.tile and spec.peak_memory:
             plan = _tile_plan(spec, call_args, memory)
             if plan.calls > 1:
-                if axes or plans:
+                if axes or any(_adapts(p) for p in (plans or {}).values()):
                     raise NotImplementedError(
                         f"Op {spec.name}: tiling and axis adaptation in one call "
                         "are not supported yet; give one or the other"
@@ -576,6 +576,17 @@ def _validate(spec: _spec.OpSpec, args: dict) -> None:
         raise TypeError(
             f"Op {spec.name} is missing required argument(s): {', '.join(missing)}"
         )
+
+
+def _adapts(plan: _adapt.AdaptationPlan) -> bool:
+    """Whether a plan changes anything: slices, iterates or reorders.
+
+    A front end hands over a plan for every input whose op declares axes,
+    including the many that come out "as is"; only the rest stand in the way
+    of tiling.
+    """
+    identity = tuple(range(len(plan.transpose)))
+    return bool(plan.iterate or plan.select) or tuple(plan.transpose) != identity
 
 
 def _tile_plan(spec: _spec.OpSpec, args: dict, memory: int | str) -> TilePlan:
