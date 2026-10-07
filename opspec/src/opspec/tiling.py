@@ -88,6 +88,7 @@ def plan_tiles(
     budget: int | str,
     overlap: int = 0,
     axes: Sequence[int] | None = None,
+    extra: int = 0,
 ) -> TilePlan:
     """Cut an input of *shape* into tiles whose peak fits *budget*.
 
@@ -100,6 +101,9 @@ def plan_tiles(
         overlap: Pixels each tile reaches past its edges, on cut axes.
         axes: The axes that may be cut; all of them by default. An axis the
             op must see whole -- colour, say -- is left out.
+        extra: Bytes per element the caller holds on top of the op's own
+            peak while a tile runs -- its copies of the tile and of the
+            result, on their way to a worker and back.
 
     Raises:
         ValueError: if even the smallest tile does not fit.
@@ -117,7 +121,7 @@ def plan_tiles(
 
     def cost(sizes: list[int]) -> int:
         elements = math.prod(extent(axis, size) for axis, size in enumerate(sizes))
-        return peak_memory.bytes_for(elements, dtype)
+        return peak_memory.bytes_for(elements, dtype) + extra * elements
 
     while cost(core) > budget:
         # Halve the longest side still worth halving.

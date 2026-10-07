@@ -149,3 +149,10 @@ def test_an_axis_left_out_is_never_cut():
 def test_an_impossible_budget_says_so():
     with pytest.raises(ValueError, match="Cannot fit"):
         plan_tiles((100, 100), "uint8", FLOAT_PAIR, 1000, overlap=20)
+
+
+def test_a_callers_own_copies_count_against_the_budget():
+    alone = plan_tiles((64, 64), "uint8", PeakMemory(scale=1), 2048)
+    with_copies = plan_tiles((64, 64), "uint8", PeakMemory(scale=1), 2048, extra=3)
+    assert with_copies.calls > alone.calls
+    assert with_copies.peak <= with_copies.budget
