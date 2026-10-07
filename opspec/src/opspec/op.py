@@ -51,8 +51,22 @@ class Role(Enum):
     vectors = "vectors"
 
 
+def _unwrap_optional(annotation: Any) -> Any:
+    """``X | None`` is X, for reading what X declares."""
+    if _is_union(get_origin(annotation)):
+        args = [a for a in get_args(annotation) if a is not type(None)]
+        if len(args) == 1:
+            return args[0]
+    return annotation
+
+
 def role_of(annotation: Any) -> Role | None:
-    """Read the role off an annotation, or ``None`` if it declares no role."""
+    """Read the role off an annotation, or ``None`` if it declares no role.
+
+    Read through ``X | None`` too: an output that may be missing still says
+    what it is when it is there.
+    """
+    annotation = _unwrap_optional(annotation)
     if get_origin(annotation) is Annotated:
         for meta in get_args(annotation)[1:]:
             if isinstance(meta, Role):
@@ -210,7 +224,11 @@ def _parse_slots(names: tuple[Any, ...]) -> tuple[Slot, ...]:
 
 
 def axes_of(annotation: Any) -> Axes | None:
-    """Read the ``Axes`` off an annotation, or ``None``."""
+    """Read the ``Axes`` off an annotation, or ``None``.
+
+    Reads through ``X | None``, as ``role_of`` does.
+    """
+    annotation = _unwrap_optional(annotation)
     if get_origin(annotation) is Annotated:
         for meta in get_args(annotation)[1:]:
             if isinstance(meta, Axes):

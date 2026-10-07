@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
 import pytest
@@ -148,6 +148,20 @@ def test_output_roles_survive():
         ("labels", Role.labels),
         ("points", Role.points),
     ]
+
+
+class MaybeCells(NamedTuple):
+    nuclei: LabelsOf[np.ndarray]
+    cells: LabelsOf[np.ndarray] | None
+
+
+@op
+def nuclei_and_maybe_cells(image: np.ndarray) -> MaybeCells: ...
+
+
+def test_an_output_that_may_be_none_keeps_its_role():
+    outputs = roundtrip(OpSpec.from_op(nuclei_and_maybe_cells)).outputs
+    assert [o.role for o in outputs] == [Role.labels, Role.labels]
 
 
 def test_return_type_and_role_survive():
