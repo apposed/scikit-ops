@@ -34,6 +34,8 @@ requires-python = ">=3.10"
 dependencies = [
     "appose>=0.12",
     "numpy",
+    # How much memory is free, for an op's default budget (skop._tiling).
+    "psutil",
     # The spec layer, from its own directory in this repo. A git URL so that
     # `pip install git+https://github.com/apposed/scikit-ops` finds it: opspec
     # is not on PyPI. PyPI refuses packages with URL dependencies, so this

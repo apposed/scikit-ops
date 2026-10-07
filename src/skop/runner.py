@@ -243,11 +243,7 @@ class Runner:
             built = json.loads(record.read_text()).get("content", "")
         except (OSError, ValueError):
             return "stale"
-        return (
-            "up to date"
-            if built.strip() == config.read_text().strip()
-            else "stale"
-        )
+        return "up to date" if built.strip() == config.read_text().strip() else "stale"
 
     def ensure_environment(
         self,
@@ -403,15 +399,19 @@ class Runner:
             memory: A memory budget for the op, as bytes or a size such as
                 ``"1G"``. An op declaring tiling hints (``@op(tile=...,
                 peak_memory=...)``) whose input would need more is run tile by
-                tile, each within the budget; see ``skop._tiling``. An op
-                declaring none runs whole, as without a budget.
+                tile, each within the budget; see ``skop._tiling``. Left out,
+                the budget is 85% of the memory available right now, cgroup
+                limits included (``skop._tiling.default_budget``); ``"off"``
+                never tiles. An op declaring no hints always runs whole.
         """
         spec = _spec.OpSpec.from_op(fn)
         call_args = dict(args or {})
         call_args.update(kwargs)
         _validate(spec, call_args)
 
-        if memory is not None and spec.tile and spec.peak_memory:
+        if memory != "off" and spec.tile and spec.peak_memory:
+            if memory is None:
+                memory = _tiling.default_budget()
             plan = _tile_plan(spec, call_args, memory)
             if plan.calls > 1:
                 if axes or any(_adapts(p) for p in (plans or {}).values()):
@@ -425,6 +425,7 @@ class Runner:
                     return self.run(
                         fn,
                         {**call_args, name: piece},
+                        memory="off",  # Already cut to fit.
                         variant=variant,
                         on_progress=on_progress,
                         on_start=on_start,
@@ -605,7 +606,19 @@ def _tile_plan(spec: _spec.OpSpec, args: dict, memory: int | str) -> TilePlan:
     values = {p.name: p.default for p in spec.params if not p.required}
     values.update(args)
     overlap = spec.overlap.resolve(values) if spec.overlap else 0
-    return plan_tiles(image.shape, image.dtype, spec.peak_memory, memory, overlap)
+    # The copies a tile makes on its way: read on the host, into shared memory
+    # for the worker, and its result back the same way. The result's dtype is
+    # not known until it exists; the op's working dtype is the best guess.
+    item_in = np.dtype(image.dtype).itemsize
+    item_out = np.dtype(spec.peak_memory.dtype or image.dtype).itemsize
+    return plan_tiles(
+        image.shape,
+        image.dtype,
+        spec.peak_memory,
+        memory,
+        overlap,
+        extra=2 * item_in + 2 * item_out,
+    )
 
 
 def _to_declared(spec: _spec.OpSpec, args: dict) -> dict:

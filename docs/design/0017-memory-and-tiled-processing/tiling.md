@@ -195,9 +195,18 @@ same thing: tiling changes their result too, and the merge softens it.
 
 ## What the runner does
 
-1. **Find the budget.** The device's memory -- VRAM for a cupy op, RAM
-   otherwise -- or the user's override. Free or total is a choice:
-   tnia-python uses free, clij2-fft uses total.
+1. **Find the budget.** The user's, if given. Otherwise 85% of the memory
+   available right now -- free memory, not total, so napari and everything
+   else running is counted -- or of the room left in a memory-limited
+   cgroup (`systemd-run -p MemoryMax=`, a Slurm job, a container), whichever
+   is less. A cgroup's limit is the one that kills, and the machine's own
+   figure knows nothing of it. Built: `skop._tiling.default_budget`. VRAM,
+   for a cupy op, is not handled yet.
+
+   The budget covers everything alive while a tile runs: the op's peak,
+   and the runner's own copies of the tile and its result on their way to
+   the worker and back (`plan_tiles(..., extra=)`). The whole output stays
+   in memory only if it fits beside that, and goes to a file otherwise.
 2. **Find the tile.** For memory, the largest tile whose peak fits. For scale
    (case 4), from the user's object size and the op's native size, then
    capped by memory. Round to the op's size rules (a multiple of 32, a
@@ -345,7 +354,7 @@ And four things they do that this design should avoid:
 
 - The exact declarative form of level 3, and whether `Overlap` and
   `PeakMemory` are objects or keyword arguments on `@op`.
-- Free or total memory as the default budget.
+- VRAM as the budget for a GPU op.
 - Whether measured `peak_memory` is cached, and where.
 - How a detector's boxes merge across outer pieces, when an
   `ImageOf[np.ndarray]` op is tiled on both levels.

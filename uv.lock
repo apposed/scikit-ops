@@ -4183,6 +4183,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "opspec" },
+    { name = "psutil" },
 ]
 
 [package.dev-dependencies]
@@ -4214,6 +4215,7 @@ requires-dist = [
     { name = "appose", specifier = ">=0.12" },
     { name = "numpy" },
     { name = "opspec", editable = "opspec" },
+    { name = "psutil" },
 ]
 
 [package.metadata.requires-dev]

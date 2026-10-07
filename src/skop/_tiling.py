@@ -24,7 +24,59 @@ import numpy as np
 
 from opspec.tiling import TilePlan
 
-__all__ = ["run_tiles"]
+__all__ = ["DEFAULT_FRACTION", "default_budget", "run_tiles"]
+
+#: The share of the memory free right now that an op may have by default.
+DEFAULT_FRACTION = 0.85
+
+
+def default_budget(fraction: float = DEFAULT_FRACTION) -> int:
+    """The memory an op may use, when the caller names no budget.
+
+    *fraction* of what is available right now: what the machine has free,
+    or, when this process runs inside a memory-limited cgroup -- under
+    ``systemd-run -p MemoryMax=``, a Slurm job, a container -- the room left
+    in it, whichever is less. The machine's own figure knows nothing of the
+    cgroup, and the cgroup's limit is the one that kills.
+    """
+    import psutil
+
+    available = psutil.virtual_memory().available
+    room = _cgroup_headroom()
+    if room is not None:
+        available = min(available, room)
+    return max(0, int(fraction * available))
+
+
+def _cgroup_headroom(
+    root: Path = Path("/sys/fs/cgroup"), proc: Path = Path("/proc/self/cgroup")
+) -> int | None:
+    """Bytes left before this process's cgroup, or one above it, is full.
+
+    cgroup v2 only. A limit can sit on any ancestor -- Slurm sets it on the
+    job, one level above the step a program runs in -- so every level is
+    read, and the tightest wins. None when there is no limit, or no cgroup
+    v2 to read.
+    """
+    try:
+        line = next(
+            entry for entry in proc.read_text().splitlines() if entry.startswith("0::")
+        )
+    except (OSError, StopIteration):
+        return None
+    group = root / line[3:].strip().lstrip("/")
+    room = None
+    while True:
+        try:
+            limit = (group / "memory.max").read_text().strip()
+            if limit != "max":
+                left = int(limit) - int((group / "memory.current").read_text())
+                room = left if room is None else min(room, left)
+        except (OSError, ValueError):
+            pass  # No memory controller at this level, or no file to read.
+        if group == root or group.parent == group:
+            return room
+        group = group.parent
 
 
 def run_tiles(call: Callable[[np.ndarray], Any], image: Any, plan: TilePlan) -> Any:
@@ -50,16 +102,18 @@ def run_tiles(call: Callable[[np.ndarray], Any], image: Any, plan: TilePlan) -> 
                 "tiles back together needs a result the shape of its input."
             )
         if output is None:
-            output = _allocate(plan.shape, result.dtype, plan.budget)
+            # The tiles' own cost is already planned into the budget; the
+            # whole output stays in memory only if it fits beside that.
+            output = _allocate(plan.shape, result.dtype, plan.budget - plan.peak)
         output[tile.write] = result[tile.keep]
     if isinstance(output, np.memmap):
         output.flush()
     return output
 
 
-def _allocate(shape: tuple[int, ...], dtype: Any, budget: int) -> np.ndarray:
-    """The whole output: in memory if it fits the budget, on disk if not."""
-    if np.dtype(dtype).itemsize * int(np.prod(shape)) <= budget:
+def _allocate(shape: tuple[int, ...], dtype: Any, room: int) -> np.ndarray:
+    """The whole output: in memory if it fits in *room*, on disk if not."""
+    if np.dtype(dtype).itemsize * int(np.prod(shape)) <= room:
         return np.empty(shape, dtype=dtype)
     folder = Path(tempfile.mkdtemp(prefix="skop-tiled-"))
     return np.lib.format.open_memmap(

@@ -7,13 +7,20 @@
 - Tiling inside an op: `skop.ops.detect.yolo` picks tiles from
   `object_size`, batches them on the GPU with memory measured as it runs,
   and merges boxes across tiles.
+- The declarations on `@op`: `tile`, `overlap`, `peak_memory`, `merge`
+  (opspec), and the planner that turns them into tiles (`opspec.tiling`).
+- The runner tiling an op on the host: `Runner.run(..., memory=)`, with a
+  default budget of 85% of available memory, cgroup limits included. Crop
+  merge only. `gaussian` declares its hints.
+- A memory budget box in skop-napari, which says how a run will be tiled.
 - Test scripts that run ops under a memory cap: `zarr-idr0079-*.py`,
   `yolo-*.py`.
 
 **Not built yet**
 
-- The declarations on `@op`: `tile`, `overlap`, `peak_memory`, `merge`.
-- The runner tiling an op: cut, run each tile, crop or blend.
+- Blend merge, tiling several inputs together, and tiling combined with
+  axis slicing.
+- VRAM as the budget for a GPU op.
 - Lazy input: getting a zarr into the worker, so an op can take
   `ImageOf[Array]`.
 - Contrast limits for the whole image, before `yolo` stretches each tile.
