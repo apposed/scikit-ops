@@ -15,15 +15,36 @@ from typing import Annotated
 
 import numpy as np
 
-from skop import cancel_requested, op, progress
+from skop import Axes, Overlap, PeakMemory, cancel_requested, op, progress
 
 from ._edges import pad_and_mask
 from .richardson_lucy import DELTA
 
+#: Non-circulant: half the PSF, per axis, how far it reaches at most; safe,
+#: if often more than the light needs. Circulant: 10 px, as clij2-fft and
+#: tnia-python use. A Tiler can set either.
+_OVERLAP = Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc", otherwise=10)
+#: Non-circulant pads by half the PSF on each side; circulant doesn't pad.
+_PAD = Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc")
 
-@op(env="cupy")
+
+@op(
+    env="cupy",
+    # The mask is tiled the same as the image; the PSF is given whole to every
+    # tile. z is never cut: a PSF is usually long in z, and cutting there
+    # costs the most overlap for the least gain.
+    tile=("image", "mask"),
+    split=("y", "x"),
+    overlap=_OVERLAP,
+    # On the GPU, in float32, counted on the padded size. About 13 float32
+    # buffers are live at once by the code -- image, PSF, weights, estimate,
+    # two complex OTFs, and an iteration's complex FFTs -- plus cuFFT's
+    # workspace. Not yet measured.
+    peak_memory=PeakMemory(16, "float32", pad=_PAD, device="gpu"),
+    merge="blend",
+)
 def richardson_lucy_cupy(
-    image: np.ndarray,
+    image: Annotated[np.ndarray, Axes("z?", "y", "x")],
     psf: np.ndarray,
     num_iters: Annotated[int, {"min": 1, "max": 1000}] = 10,
     noncirc: bool = False,

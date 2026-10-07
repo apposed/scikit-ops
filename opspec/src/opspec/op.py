@@ -1,7 +1,6 @@
-"""Op declaration and signature introspection.
+"""Declare ops, and read their signatures into specs.
 
-Standard library only: this module is imported inside every worker
-environment, so it must depend on nothing heavier.
+Standard library only, because every worker environment imports it.
 """
 
 from __future__ import annotations
@@ -25,7 +24,10 @@ from typing import (
 
 
 class Role(Enum):
-    """What a value *means*
+    """What a value *means* to a user or application.
+
+    For example, images and labels are both arrays, but a host renders them
+    differently and a user interprets them differently.
 
     Attach with ``Annotated[T, Role.<name>]``::
 
@@ -34,8 +36,8 @@ class Role(Enum):
             image: Annotated[np.ndarray, Role.image],
         ) -> Annotated[np.ndarray, Role.labels]: ...
 
-    A host reads ``Role.labels`` and shows the result as a segmentation
-    rather than a grey picture.
+    A host reads ``Role.labels`` and shows the result as a segmentation, not
+    a grey image.
     """
 
     boxes = "boxes"
@@ -58,13 +60,13 @@ def role_of(annotation: Any) -> Role | None:
     return None
 
 
-#: Axis names a viewer can map onto display semantics. Privileged, not
-#: exclusive: any string is a valid axis label.
+#: Axis names a viewer knows how to display. Any other string is still a
+#: valid axis label.
 CANONICAL = ("x", "y", "z", "c", "t")
 
-#: Synonyms, resolved by lookup rather than guessed: ``row`` *is* ``y``.
-#: From scikit-image, ImageJ, Bio-Formats, CZI and OME-NGFF. Labels with
-#: no canonical equivalent (``lifetime``, ``batch``) pass through.
+#: Synonyms for the canonical names, from scikit-image, ImageJ, Bio-Formats,
+#: CZI and OME-NGFF: ``row`` is ``y``. Other labels (``lifetime``,
+#: ``batch``) pass through unchanged.
 ALIASES = {
     "col": "x",
     "cols": "x",
@@ -90,9 +92,9 @@ ALIASES = {
 
 
 def canonical(label: str) -> str:
-    """One axis label, case ignored and resolved: ``ROW`` -> ``y``.
+    """An axis label, lowercased and resolved: ``ROW`` -> ``y``.
 
-    Unrecognized labels pass through lowercased, so ``"lifetime"`` survives.
+    An unknown label is returned lowercased: ``"Lifetime"`` -> ``"lifetime"``.
     """
     folded = label.strip().casefold()
     return ALIASES.get(folded, folded)
@@ -103,9 +105,8 @@ WILDCARD = "*"
 
 @dataclass(frozen=True)
 class Slot:
-    """One axis an op consumes. ``name`` is a hint, not a requirement.
-
-    ``name`` None is a wildcard: no preference at all.
+    """One axis an op takes. ``name`` is a hint, not a requirement; None is
+    a wildcard, any axis.
     """
 
     name: str | None
@@ -117,7 +118,7 @@ class Slot:
 
 @dataclass(frozen=True, init=False)
 class Axes:
-    """How many axes an op consumes, and what it likes to call them::
+    """How many axes an op takes, and what it calls them::
 
         Axes("y", "x")        # two axes, named y and x
         Axes(list("zyx"))     # three
@@ -125,21 +126,20 @@ class Axes:
         Axes("*", "*")        # two axes, no opinion which
         Axes(variadic=True)   # any number
 
-    - Names are hints. A mismatch is reported in the plan, never refused.
-    - Arity binds: how many axes the op consumes is what its indexing needs.
-    - ``variadic`` means the op handles extra axes itself, so they need
-      not be looped over.
-    - Inert at runtime. Calling the op directly ignores all of this.
+    - Names are hints: a mismatch is a warning in the plan, not an error.
+    - The number of axes is a rule: it is what the op's indexing needs.
+    - ``variadic`` means the op handles extra axes itself, so they are not
+      looped over.
+    - Ignored when the op is called directly.
     """
 
     slots: tuple[Slot, ...]
     variadic: bool
 
     def __init__(self, *names: Any, variadic: bool = False) -> None:
-        # Note: frozen blocks ordinary assignment, so a hand-written __init__
-        # has to set fields the way dataclass itself does. Storing the parsed
-        # slots rather than the raw text is what makes Axes("z", "y", "x") and
-        # Axes("pln", "row", "col") compare equal, as they should.
+        # frozen blocks normal assignment, so set fields as dataclass does.
+        # Slots are stored parsed, so Axes("z", "y", "x") equals
+        # Axes("pln", "row", "col").
         if len(names) == 1 and not isinstance(names[0], str):
             # A lone non-string is the sequence itself: Axes(list("zyx")).
             names = tuple(names[0])
@@ -148,7 +148,7 @@ class Axes:
 
     @property
     def names(self) -> tuple[str, ...]:
-        """Each slot's preferred name, with ``"*"`` standing in for a wildcard."""
+        """Each slot's name; ``"*"`` for a wildcard."""
         return tuple(str(slot).removesuffix("?") for slot in self.slots)
 
     @property
@@ -160,7 +160,7 @@ class Axes:
 
     @property
     def core(self) -> tuple[str, ...]:
-        """Preferred names of the slots that must be filled."""
+        """Names of the slots that must be filled."""
         return tuple(str(slot) for slot in self.slots if not slot.optional)
 
     def __repr__(self) -> str:
@@ -171,7 +171,7 @@ class Axes:
 
 
 def _parse_slots(names: tuple[Any, ...]) -> tuple[Slot, ...]:
-    """Validate slot spellings, resolving names and splitting off the '?'."""
+    """Check slot labels, resolve their names and split off the '?'."""
     slots: list[Slot] = []
     seen: set[str] = set()
     for label in names:
@@ -190,16 +190,15 @@ def _parse_slots(names: tuple[Any, ...]) -> tuple[Slot, ...]:
         text = label.removesuffix("?")
         if text == WILDCARD:
             if optional:
-                # A wildcard has no name, and an optional slot is filled only
-                # by a name match, so '*?' could never be filled by anything.
+                # An optional slot is filled only by name, and a wildcard has
+                # none, so '*?' could never be filled.
                 raise ValueError(
                     "'*?' is not a usable slot: a wildcard has no name to match "
                     "on, and an optional slot is filled only by name. Use '*' "
                     "for an axis the op always takes, or variadic=True for a "
                     "tail of axes it may or may not be given."
                 )
-            # Wildcards are exempt from the repeat check: Axes('*', '*') is
-            # two axes the op has no opinion about, which is the whole point.
+            # Wildcards may repeat: Axes('*', '*') is two axes of any kind.
             slots.append(Slot(None, False))
             continue
         name = canonical(text)
@@ -211,6 +210,7 @@ def _parse_slots(names: tuple[Any, ...]) -> tuple[Slot, ...]:
 
 
 def axes_of(annotation: Any) -> Axes | None:
+    """Read the ``Axes`` off an annotation, or ``None``."""
     if get_origin(annotation) is Annotated:
         for meta in get_args(annotation)[1:]:
             if isinstance(meta, Axes):
@@ -222,7 +222,7 @@ def axes_of(annotation: Any) -> Axes | None:
 
 
 class _Direction:
-    """Marker distinguishing input, output-buffer and mutated-buffer params."""
+    """Marks a parameter as an output buffer (``Out``) or mutated (``Mut``)."""
 
     def __init__(self, name: str) -> None:
         self.name = name
@@ -235,7 +235,7 @@ OUT = _Direction("Out")
 MUT = _Direction("Mut")
 
 # Op computation forms, in the SciJava Ops sense.
-FUNCTION = "function"  # inputs in, freshly allocated output out
+FUNCTION = "function"  # returns a new output
 COMPUTER = "computer"  # caller supplies the output buffer, op fills it
 INPLACE = "inplace"  # op mutates one of its inputs
 
@@ -246,10 +246,10 @@ def _annotate(item: Any, marker: _Direction) -> Any:
 
 
 class Out:
-    """Mark a parameter as a caller-allocated output buffer.
+    """Mark a parameter as an output buffer the caller allocates.
 
-    ``labels: Out[np.ndarray]`` declares a computer-form op. A host does not
-    ask a user for an output buffer; it allocates one and reads it back.
+    ``labels: Out[np.ndarray]`` declares a computer-form op. A host doesn't
+    ask the user for the buffer; it allocates it and reads it back.
     """
 
     def __class_getitem__(cls, item: Any) -> Any:
@@ -277,23 +277,22 @@ def direction_of(annotation: Any) -> _Direction | None:
 
 @dataclass(frozen=True, init=False)
 class Choices:
-    """A curated list of the ops a parameter may be filled with.
+    """A list of the ops a workflow parameter may be filled with.
 
-    Attached to a ``Callable`` parameter of a workflow, so that a front end can
-    offer a combo box rather than asking someone to type an import path::
+    Attached to a ``Callable`` parameter, so a GUI can offer a combo box
+    instead of asking for an import path::
 
         psf_op: Annotated[Callable, Choices(gaussian=gaussian_psf,
                                             gibson_lanni=gibson_lanni)]
 
-    The keyword names are the menu labels: "gpu" is a better thing to show a
-    researcher than ``richardson_lucy_cupy``.
+    The keywords are the menu labels: "gpu" is easier to read than
+    ``richardson_lucy_cupy``.
 
-    **The list constrains the GUI, not the function.** Passing an op that is
-    not in it stays legal, because that is how the list grows -- someone tries
-    an untested solver in a script, it works, and it gets added here where the
-    change can be reviewed. Curated rather than discovered for the same reason:
-    a list means "I have tested these", where an inventory means only "these
-    are installed".
+    **The list limits the GUI, not the function**: a script may pass any op.
+    That is how the list grows: someone tries an untested op in a script, it
+    works, and it is added here, where the change is reviewed. The list is
+    written by hand, not discovered, because it means "these are tested", not
+    "these are installed".
     """
 
     options: tuple[tuple[str, Callable], ...]
@@ -303,6 +302,7 @@ class Choices:
 
     @property
     def labels(self) -> tuple[str, ...]:
+        """The menu labels."""
         return tuple(label for label, _ in self.options)
 
     def op(self, label: str) -> Callable:
@@ -310,20 +310,17 @@ class Choices:
         return dict(self.options)[label]
 
     def label(self, fn: Callable) -> str | None:
-        """What this list calls *fn*, if it lists it at all."""
+        """The label for *fn*, or None if it isn't listed."""
         return next((label for label, op in self.options if op is fn), None)
 
     @property
     def ids(self) -> tuple[tuple[str, str], ...]:
-        """``(label, "module:function")`` pairs.
+        """``(label, "module:function")`` pairs: the form sent over the wire.
 
-        The view that survives going over a wire: a Fiji front end needs the
-        menu without needing the Python objects behind it. So it also has to
-        survive coming *back* -- a ``Choices`` rebuilt from its wire form holds
-        the IDs themselves, since the functions they name are not importable in
-        the process that read them, and an ID passed through unchanged is what
-        makes this property the fixed point it claims to be. ``op()`` and
-        ``label()`` want live objects and are unavailable on such a one.
+        A front end in another process, Fiji say, needs the menu but can't
+        import the functions. A ``Choices`` rebuilt from the wire holds these
+        IDs instead of functions, and ``ids`` returns them unchanged;
+        ``op()`` and ``label()`` don't work on it.
         """
         return tuple(
             (label, op if isinstance(op, str) else f"{op.__module__}:{op.__name__}")
@@ -333,32 +330,27 @@ class Choices:
 
 @dataclass(frozen=True, init=False)
 class ParamsFor:
-    """Marks a parameter as holding the arguments of a chosen op.
-
-    A chooser needs somewhere to put the chosen op's own settings, and a plain
-    dict is that somewhere::
+    """Marks a dict parameter as holding the arguments of a chosen op::
 
         decon_op: Annotated[Callable, Choices(cpu=..., gpu=...)] = richardson_lucy
         decon_args: Annotated[dict, ParamsFor("decon_op",
                                               binds=("image", "psf"))] = None
 
-    ``binds`` names the sub-op parameters the workflow supplies itself, from
-    its own inputs or from an earlier stage's output. A front end renders every
-    *other* parameter of the chosen op and leaves these alone -- which is what
-    stops two stages that both take an image from asking for it twice.
+    ``binds`` names the chosen op's parameters that the workflow fills
+    itself, from its own inputs or an earlier step's output. A GUI shows only
+    the chosen op's *other* parameters, so two steps that both take an image
+    don't both ask for it.
 
-    It is declared rather than inferred. Matching on name would hide the image
-    for free but still not know that a mask generator's ``boxes`` come from the
-    detector, and a rule that covers half the cases is harder to explain than
-    no rule at all.
+    ``binds`` is declared, not inferred from names. Matching names would
+    catch the image, but not that a mask op's ``boxes`` come from the
+    detector, and half a rule is harder to explain than none.
     """
 
     chooser: str
     binds: tuple[str, ...]
 
     def __init__(self, chooser: str, *, binds: Any = ()) -> None:
-        # A lone string is the common case and iterating it would bind one
-        # parameter per letter, so take it as the single name it obviously is.
+        # One name as a string is common; don't bind it letter by letter.
         if isinstance(binds, str):
             binds = (binds,)
         object.__setattr__(self, "chooser", chooser)
@@ -385,8 +377,8 @@ def params_for_of(annotation: Any) -> ParamsFor | None:
 
 # -- tiling: hints for cutting one call into several -----------------------
 #
-# All optional, and hints rather than rules: a runner uses them to choose a
-# default, and a caller can override any of it. See scikit-ops'
+# All optional, and hints, not rules: a runner uses them for its defaults,
+# and a caller can override any of them. See scikit-ops'
 # docs/design/0017-memory-and-tiled-processing/tiling.md.
 
 #: Bytes per element, by dtype name. opspec cannot ask numpy.
@@ -420,22 +412,32 @@ def _dtype_name(dtype: Any) -> str:
 
 @dataclass(frozen=True)
 class PeakMemory:
-    """An op's peak memory, as a multiple of the input it is handed::
+    """An op's peak memory, as a multiple of its input's size::
 
         PeakMemory(scale=2, dtype="float32")   # two float32 copies at once
+        PeakMemory(10, "float64", pad=Overlap(param="psf", of="shape", scale=0.5))
 
-    ``dtype`` is what the op's buffers are held in; None means the input's
-    own. ``fixed`` is bytes that do not grow with the input -- a model's
-    weights, say.
+    - ``dtype``: what the op's buffers hold; None means the input's dtype.
+    - ``fixed``: bytes that don't grow with the input, such as a model's
+      weights.
+    - ``pad``: how far the op pads its input on each side, as an
+      ``Overlap``. The multiple counts the padded size. An FFT op pads by
+      part of its kernel, as in the second example.
+    - ``device``: ``"cpu"`` (RAM) or ``"gpu"`` (GPU memory). The budget is
+      taken from that device.
     """
 
     scale: float
     dtype: str | None = None
     fixed: int = 0
+    pad: Overlap | None = None
+    device: str = "cpu"
 
     def __post_init__(self) -> None:
         if self.dtype is not None:
             object.__setattr__(self, "dtype", _dtype_name(self.dtype))
+        if self.device not in ("cpu", "gpu"):
+            raise ValueError(f"PeakMemory device={self.device!r}: 'cpu' or 'gpu'")
 
     def bytes_for(self, n_elements: int, input_dtype: Any = "uint8") -> int:
         """Peak bytes for an input of *n_elements* elements."""
@@ -443,44 +445,93 @@ class PeakMemory:
         return math.ceil(self.scale * n_elements * itemsize) + self.fixed
 
     def to_dict(self) -> dict:
-        return {"scale": self.scale, "dtype": self.dtype, "fixed": self.fixed}
+        data = {"scale": self.scale, "dtype": self.dtype, "fixed": self.fixed}
+        if self.pad is not None:
+            data["pad"] = self.pad.to_dict()
+        if self.device != "cpu":
+            data["device"] = self.device
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> PeakMemory:
-        return cls(data["scale"], data.get("dtype"), data.get("fixed", 0))
+        pad = Overlap.from_dict(data["pad"]) if data.get("pad") else None
+        return cls(
+            data["scale"],
+            data.get("dtype"),
+            data.get("fixed", 0),
+            pad,
+            data.get("device", "cpu"),
+        )
 
 
 @dataclass(frozen=True)
 class Overlap:
-    """How far each tile reaches past its edges, in pixels::
+    """How far a tile reads past its core on each side, in pixels::
 
-        Overlap(10)                       # always 10 pixels
-        Overlap(param="sigma", scale=4)   # 4 x sigma, read off the call
+        Overlap(10)                                   # always 10 pixels
+        Overlap(param="sigma", scale=4)               # 4 x sigma
+        Overlap(param="psf", of="shape", scale=0.5)   # half the PSF, per axis
+        Overlap(param="psf", of="shape", scale=0.5,
+                only_if="noncirc", otherwise=10)      # 10 when noncirc is off
 
-    A formula is data, not code, so any front end can work it out.
+    A formula is data, not code, so any front end can evaluate it.
+    ``pixels`` is added to it. With ``only_if``, the formula applies when that
+    parameter is true, and ``otherwise`` pixels when it is false.
+
+    With ``of="shape"`` the parameter is an array, and the overlap is per
+    axis, from its shape, rounded down: half a kernel of 31 is 15, exactly
+    how far it reaches. Otherwise the parameter is a number, or one per axis
+    (the largest is used), and the overlap is rounded up.
     """
 
     pixels: int = 0
     param: str | None = None
     scale: float = 1.0
+    of: str | None = None
+    only_if: str | None = None
+    otherwise: int = 0
 
-    def resolve(self, values: dict) -> int:
-        """The overlap for a call with these argument *values*."""
+    def resolve(self, values: dict) -> int | tuple[int, ...]:
+        """The overlap for a call with these argument *values*.
+
+        One number, the same on every axis, or one per axis for ``of="shape"``.
+        """
+        if self.only_if is not None and not values.get(self.only_if):
+            return self.otherwise
         if self.param is None:
             return self.pixels
         value = values.get(self.param)
         if value is None:
             raise ValueError(f"Overlap needs {self.param}, and the call has none")
+        if self.of == "shape":
+            return tuple(self.pixels + math.floor(self.scale * n) for n in value.shape)
         if isinstance(value, (list, tuple)):
             value = max(value)
         return self.pixels + math.ceil(self.scale * float(value))
 
     def to_dict(self) -> dict:
-        return {"pixels": self.pixels, "param": self.param, "scale": self.scale}
+        data = {"pixels": self.pixels, "param": self.param, "scale": self.scale}
+        if self.of is not None:
+            data["of"] = self.of
+        if self.only_if is not None:
+            data["only_if"] = self.only_if
+            data["otherwise"] = self.otherwise
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> Overlap:
-        return cls(data.get("pixels", 0), data.get("param"), data.get("scale", 1.0))
+        return cls(
+            data.get("pixels", 0),
+            data.get("param"),
+            data.get("scale", 1.0),
+            data.get("of"),
+            data.get("only_if"),
+            data.get("otherwise", 0),
+        )
+
+    def __post_init__(self) -> None:
+        if self.of not in (None, "shape"):
+            raise ValueError(f"Overlap of={self.of!r}: only 'shape' is known")
 
 
 @dataclass(frozen=True)
@@ -492,6 +543,7 @@ class _OpConfig:
     overlap: Overlap | None = None
     peak_memory: PeakMemory | None = None
     merge: str | None = None
+    split: tuple[str, ...] = ()
 
 
 def op(
@@ -504,11 +556,13 @@ def op(
     overlap: Overlap | int | None = None,
     peak_memory: PeakMemory | None = None,
     merge: str | None = None,
+    split: tuple[str, ...] | None = None,
 ) -> Callable:
     """Declare a function as an op.
 
-    Sets an attribute on the function and returns the same function, so
-    calling it directly is unaffected. Bare or called, like ``@dataclass``::
+    Sets an attribute on the function and returns it unchanged, so calling
+    it directly still works. Use it bare or with arguments, like
+    ``@dataclass``::
 
         @op
         def smooth(image: ImageOf[np.ndarray]) -> ImageOf[np.ndarray]: ...
@@ -517,20 +571,24 @@ def op(
         def deconvolve(image: ImageOf[cp.ndarray]) -> ImageOf[cp.ndarray]: ...
 
     Args:
-        env: Environment the op runs in. Omit it and the op has none: it
-            runs wherever the caller is. A workflow, an op that calls other
-            ops, is one of these.
+        env: The environment the op runs in. Without one, the op runs
+            wherever the caller is; a workflow (an op that calls other ops)
+            is like this.
         main_thread: Whether the op must run on its worker's main thread.
-        exclusive: Whether the op needs a worker to itself, rather than
+        exclusive: Whether the op needs a worker to itself, instead of
             sharing one with other ops in the same environment.
-        tile: The parameter, or parameters, a runner may cut into tiles to
-            fit memory. They are cut at the same places.
-        overlap: How far a tile reaches past its edges: an ``Overlap``, or
-            a number of pixels.
-        peak_memory: The op's peak memory, as a ``PeakMemory``; what a runner
-            sizes tiles from.
-        merge: How the tiles go back together. ``"crop"`` keeps each tile's
-            middle and drops the overlap.
+        tile: The parameter or parameters a runner may cut into tiles to
+            fit memory. All are tiled the same way.
+        overlap: How far a tile reads past its core: an ``Overlap``, or a
+            number of pixels.
+        peak_memory: The op's peak memory, as a ``PeakMemory``. A runner
+            sizes tiles from it.
+        merge: How tiles are put back together. ``"crop"`` keeps each
+            tile's core and drops the overlap. ``"blend"`` fades each tile
+            out across the overlap, so neighbours mix where they meet.
+        split: The axes a tile may be cut along, named as in the tiled
+            input's ``Axes``. ``("y", "x")`` keeps z whole, as decon wants
+            with a PSF long in z. Left out, any axis may be cut.
     """
 
     def decorate(f: Callable) -> Callable:
@@ -542,6 +600,7 @@ def op(
             overlap=Overlap(overlap) if isinstance(overlap, int) else overlap,
             peak_memory=peak_memory,
             merge=merge,
+            split=tuple(split or ()),
         )
         return f
 
@@ -554,12 +613,12 @@ def is_op(obj: Any) -> bool:
 
 
 def _ui_hints(annotation: Any) -> dict:
-    """Collect dict metadata off an annotation: widget hints for a host::
+    """Widget hints for a host: the dicts in an annotation's metadata::
 
         sigma: Annotated[float, {"min": 0.1, "max": 10.0}] = 2.0
 
-    Several dicts merge, left to right. opspec does not interpret the keys;
-    a host reads the ones it knows.
+    Several dicts merge, left to right. opspec doesn't interpret the keys; a
+    host uses the ones it knows.
     """
     hints: dict = {}
     if get_origin(annotation) is Annotated:
@@ -578,9 +637,9 @@ def _strip(annotation: Any) -> Any:
 
 # -- the wire vocabulary ------------------------------------------------
 #
-# Out of process, a type cannot be a Python object: a Java front end has no
-# way to receive ``<class 'numpy.ndarray'>``, only a name for it. These are
-# the names -- the set a generated dialog can render, plus UNKNOWN.
+# Types sent to another process are names, not Python objects: a Java front
+# end can't receive ``<class 'numpy.ndarray'>``. These are the names a
+# generated dialog can render, plus UNKNOWN.
 
 INT = "int"
 FLOAT = "float"
@@ -611,10 +670,10 @@ class Choice:
 
 @dataclass(frozen=True)
 class TypeSpec:
-    """A type in the vocabulary a front end can act on.
+    """A parameter's type, as a wire name a front end understands.
 
-    ``UNKNOWN`` is not a failure: a front end that cannot render one
-    parameter leaves it at its default and says why, using ``detail``.
+    ``UNKNOWN`` is not an error: a front end that can't show a parameter
+    leaves it at its default and says why, from ``detail``.
     """
 
     name: str
@@ -652,14 +711,14 @@ def _is_ndarray(annotation: Any) -> bool:
 
 
 def _spelling(annotation: Any) -> str:
-    """How an annotation is best named in a message to a human."""
+    """An annotation's name, for a message."""
     if isinstance(annotation, type):
         return annotation.__name__
     return str(annotation)
 
 
 def _is_union(origin: Any) -> bool:
-    """Whether an origin is a union, spelled either way."""
+    """Whether an origin is a union: ``Union[X, Y]`` or ``X | Y``."""
     if origin is Union:
         return True
     union_type = getattr(_types, "UnionType", None)  # 3.10+: X | Y
@@ -677,7 +736,7 @@ def type_spec(annotation: Any) -> TypeSpec:
     if origin is not None and _is_union(origin):
         args = [a for a in get_args(annotation) if a is not type(None)]
         if len(args) == 1:
-            inner = type_spec(args[0])  # Optional[X] is X, and may be empty
+            inner = type_spec(args[0])  # Optional[X] is X, nullable
             return TypeSpec(inner.name, inner.choices, True, inner.detail)
         return TypeSpec(UNKNOWN, detail=_spelling(annotation))
 
@@ -706,7 +765,7 @@ def type_spec(annotation: Any) -> TypeSpec:
 
 
 def _wire_default(value: Any) -> Any:
-    """A default value in a form JSON can carry."""
+    """A default value JSON can carry; None if it can't."""
     if isinstance(value, Enum):
         return value.value
     if isinstance(value, PurePath):
@@ -715,6 +774,8 @@ def _wire_default(value: Any) -> Any:
         return value
     if isinstance(value, (list, tuple)):
         return [_wire_default(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _wire_default(item) for key, item in value.items()}
     return None
 
 
@@ -774,8 +835,7 @@ class ParamSpec:
         if self.direction is not None:
             data["direction"] = self.direction.name
         if self.choices is not None:
-            # The ids view, not the options: a front end in another language
-            # needs the menu without needing the Python objects behind it.
+            # IDs, not functions: another process can't import the functions.
             data["choices"] = [
                 {"label": label, "op": op_id} for label, op_id in self.choices.ids
             ]
@@ -790,9 +850,8 @@ class ParamSpec:
     def from_dict(cls, data: dict) -> ParamSpec:
         """Rebuild from the wire form.
 
-        ``type`` comes back as a ``TypeSpec``, not the live Python type: that
-        type does not exist in the process doing the reading, which is the
-        whole reason for the wire vocabulary.
+        ``type`` comes back as a ``TypeSpec``, not the Python type, which may
+        not exist in the reading process.
         """
         return cls(
             name=data["name"],
@@ -819,13 +878,11 @@ class ParamSpec:
 
 
 def _choices_from_dict(data: list | None) -> Choices | None:
-    """Rebuild a Choices from its wire form.
+    """Rebuild a Choices from the wire form.
 
-    The options come back as op *IDs* rather than functions, because the
-    functions are not importable in the process doing the reading -- that is
-    the whole reason the wire form exists. ``Choices.ids`` is therefore the
-    only view that survives the round trip, and it is the one a front end
-    uses; ``op()`` and ``label()`` want live objects and do not.
+    The options hold op IDs, not functions, since the reading process can't
+    import them. Only ``Choices.ids`` works on the result; ``op()`` and
+    ``label()`` need the functions.
     """
     if not data:
         return None
@@ -840,7 +897,7 @@ def _choices_from_dict(data: list | None) -> Choices | None:
 
 @dataclass(frozen=True)
 class OutputSpec:
-    """One of an op's outputs, as a front end needs to see it."""
+    """One of an op's outputs: its name, type and role."""
 
     name: str
     type: Any
@@ -862,18 +919,16 @@ class OutputSpec:
 
 
 class _Unbound:
-    """A function's annotations, detached from its defaults.
+    """A function's annotations, without its defaults.
 
-    Before Python 3.11, ``get_type_hints`` rewrites the annotation of any
-    parameter defaulting to ``None`` as ``Optional[<annotation>]``. Building
-    that Union deduplicates its members through a set, which hashes the
-    ``Annotated`` alias, which hashes its metadata -- and UI hints are dicts,
-    which are unhashable. So an op with a slider hint and a ``None`` default
-    could not be read at all on 3.10.
+    Before Python 3.11, ``get_type_hints`` turns the annotation of a
+    parameter defaulting to ``None`` into ``Optional[...]``. Building that
+    Union hashes the ``Annotated`` metadata, and UI hints are dicts, which
+    can't be hashed. So on 3.10, an op with a slider hint and a ``None``
+    default couldn't be read.
 
-    Passing the annotations through an object with no ``__code__`` denies
-    ``get_type_hints`` any defaults to find, which suppresses the rewrite and
-    gives every Python version the 3.11+ reading of the signature.
+    This object has no ``__code__``, so ``get_type_hints`` finds no defaults
+    and rewrites nothing, on any Python version.
     """
 
     def __init__(self, fn: Callable) -> None:
@@ -887,8 +942,8 @@ def _resolve_hints(fn: Callable) -> dict:
 
     ``from __future__ import annotations`` turns every annotation into a
     string, and so does running a file with ``exec`` from a module that
-    imports it. Resolution happens through ``get_type_hints`` rather than
-    ``inspect.signature(eval_str=True)``, which needs Python 3.10.
+    imports it. Uses ``get_type_hints``, since
+    ``inspect.signature(eval_str=True)`` needs Python 3.10.
     """
     try:
         return get_type_hints(_Unbound(fn), include_extras=True)
@@ -906,13 +961,12 @@ def _resolve_hints(fn: Callable) -> dict:
 def _outputs_of(
     return_type: Any, return_role: Role | None, fn: Callable | None = None
 ) -> tuple[OutputSpec, ...]:
-    """An op's outputs. A NamedTuple return is one output per field.
+    """An op's outputs; a NamedTuple return is one output per field.
 
-    The fields' annotations may be strings, and are resolved where their names
-    live. That is usually the NamedTuple's own module, which may not be the
-    op's: a shared result type is imported by several ops. A file run with
-    ``exec`` has no module to look in, so *fn*'s globals come next. Failing
-    both, the raw annotations, at the cost of their roles.
+    Field annotations may be strings. They are resolved first in the
+    NamedTuple's own module, which may not be the op's (several ops can share
+    a result type), then in *fn*'s globals, for a file run with ``exec``. If
+    both fail, the raw annotations are used, and the roles are lost.
     """
     if return_type in (None, type(None), inspect.Parameter.empty):
         return ()
@@ -963,33 +1017,33 @@ class OpSpec:
     overlap: Overlap | None = None
     peak_memory: PeakMemory | None = None
     merge: str | None = None
+    split: tuple[str, ...] = ()
 
-    #: Set only when rebuilt from the wire, where the return type is a name
-    #: rather than the live type the property below derives outputs from.
+    #: The outputs, as ``from_op`` worked them out or as read from the wire.
+    #: Off the wire the return type is only a name, so they can't be derived.
     _outputs: tuple[OutputSpec, ...] | None = field(
         default=None, repr=False, compare=False
     )
 
     @property
     def is_workflow(self) -> bool:
-        """Whether this op has no environment of its own.
+        """Whether the op has no environment, and runs where the caller is.
 
-        It runs where the caller is. A workflow, an op that calls other ops,
-        is one: the ops it calls each bring their own environment.
+        A workflow is one: the ops it calls bring their own environments.
         """
         return self.env is None
 
     @property
     def inputs(self) -> tuple[ParamSpec, ...]:
-        """The parameters a caller supplies. Output buffers are not asked for."""
+        """The parameters a caller supplies: all but output buffers."""
         return tuple(p for p in self.params if p.direction is not OUT)
 
     @property
     def outputs(self) -> tuple[OutputSpec, ...]:
-        """This op's outputs, named.
+        """The op's outputs.
 
-        A computer- or inplace-form op names its buffers. Otherwise a
-        NamedTuple return is one output each, and anything else is "result".
+        For a computer- or inplace-form op, its buffers. Otherwise one per
+        field of a NamedTuple return, or one named "result".
         """
         if self._outputs is not None:
             return self._outputs
@@ -1000,11 +1054,10 @@ class OpSpec:
         return _outputs_of(self.return_type, self.return_role)
 
     def to_dict(self) -> dict:
-        """A JSON-safe form, for the trip to another process or language.
+        """A JSON-safe dict, for sending to another process or language.
 
-        ``outputs`` is written out rather than left to be derived, because
-        deriving it needs the live return type -- a NamedTuple's fields --
-        which does not cross the boundary.
+        ``outputs`` is included because deriving it needs the live return
+        type, which isn't sent.
         """
         return {
             "name": self.name,
@@ -1019,12 +1072,12 @@ class OpSpec:
             "return_role": self.return_role.value if self.return_role else None,
             "outputs": [o.to_dict() for o in self.outputs],
             "doc": self.doc,
-            # Tiling hints only when declared, so an op without them looks
-            # exactly as it did to a reader that predates them.
+            # Tiling hints only when declared, so older readers see no change.
             **({"tile": list(self.tile)} if self.tile else {}),
             **({"overlap": self.overlap.to_dict()} if self.overlap else {}),
             **({"peak_memory": self.peak_memory.to_dict()} if self.peak_memory else {}),
             **({"merge": self.merge} if self.merge else {}),
+            **({"split": list(self.split)} if self.split else {}),
         }
 
     @classmethod
@@ -1056,16 +1109,16 @@ class OpSpec:
                 else None
             ),
             merge=data.get("merge"),
+            split=tuple(data.get("split", ())),
             _outputs=tuple(OutputSpec.from_dict(o) for o in data.get("outputs", ())),
         )
 
     @classmethod
     def from_op(cls, fn: Callable) -> OpSpec:
-        """Read the spec off a decorated op.
+        """Read the spec of a decorated op.
 
-        Annotations are resolved here rather than at decoration time, so an
-        op may refer to types defined later in its own module. The result is
-        kept on the function, so a spec is read once.
+        Annotations are resolved here, not in ``@op``, so an op may use types
+        defined later in its module. The spec is cached on the function.
         """
         cached = getattr(fn, "__opspec_spec__", None)
         if cached is not None:
@@ -1101,13 +1154,25 @@ class OpSpec:
 
         names = {p.name for p in params}
         unknown = [name for name in config.tile if name not in names]
-        if config.overlap and config.overlap.param:
-            unknown += [config.overlap.param] * (config.overlap.param not in names)
+        pad = config.peak_memory.pad if config.peak_memory else None
+        for formula in (config.overlap, pad):
+            for name in (formula.param, formula.only_if) if formula else ():
+                if name and name not in names:
+                    unknown.append(name)
         if unknown:
             raise TypeError(
                 f"Op {fn.__qualname__}'s tiling hints name no such parameter: "
                 f"{', '.join(unknown)}"
             )
+        if config.split and config.tile:
+            tiled = next(p for p in params if p.name == config.tile[0])
+            named = tiled.axes.names if tiled.axes and not tiled.axes.variadic else ()
+            stray = [n for n in config.split if named and n not in named]
+            if stray:
+                raise TypeError(
+                    f"Op {fn.__qualname__} splits along {', '.join(stray)}, which "
+                    f"{tiled.name}'s Axes{tuple(named)} does not name"
+                )
 
         directions = {p.direction for p in params}
         if OUT in directions and MUT in directions:
@@ -1133,7 +1198,7 @@ class OpSpec:
             if buffers
             else _outputs_of(_strip(returns), role_of(returns), fn)
         )
-        # A function defined by exec has no module; name it for what it is.
+        # A function defined by exec has no module, so call it __script__.
         module = fn.__module__ or "__script__"
         result = cls(
             name=f"{module}:{fn.__name__}",
@@ -1151,6 +1216,7 @@ class OpSpec:
             overlap=config.overlap,
             peak_memory=config.peak_memory,
             merge=config.merge,
+            split=config.split,
             _outputs=outputs,
         )
         fn.__opspec_spec__ = result

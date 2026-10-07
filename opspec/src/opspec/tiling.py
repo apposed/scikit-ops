@@ -1,14 +1,15 @@
-"""Cutting one call into tiles that fit a memory budget.
+"""Divides large inputs into tiles that fit a memory budget.
 
-Arithmetic only -- shapes, overlaps and bytes, from an op's ``PeakMemory``
-and ``Overlap``. Reading the tiles, calling the op on each and putting the
-results back touches pixels, and is a runner's job.
+Ops can declare the overlap they need, and their peak memory as a multiple of
+the input size. ``plan_tiles`` uses these to calculate a tile size that fits
+the memory available. Reading the tiles, calling the op on each one and
+writing the results to the output is the runner's job.
 
-A tile has three regions. Its *core* is its share of the image: the cores
-partition the image exactly. It *reads* its core plus the overlap on every
-side, except where that side is the real edge of the image -- there it adds
-nothing, and the op handles the boundary as it would untiled. Of the result
-it *keeps* the core, and *writes* it where the core came from.
+A tile has three regions. Its *core* is its share of the image; the cores
+cover the image exactly, with no gaps or overlap. It *reads* its core plus the
+overlap on every side, except at the image's real edges, where the op handles
+the boundary as it would untiled. It *keeps* the core of its result, and
+*writes* it where the core came from.
 """
 
 from __future__ import annotations
@@ -28,9 +29,10 @@ _UNITS = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4}
 
 
 def parse_bytes(size: int | str) -> int:
-    """A number of bytes, from ``"1G"``, ``"512M"``, ``"1.5GiB"`` or an int.
+    """Bytes, from an int or a size such as ``"1G"``, ``"512M"``, ``"1.5GiB"``.
 
-    Binary units, as ``systemd-run -p MemoryMax=`` and ``free`` use them.
+    Units are binary (1K is 1024), as in ``systemd-run -p MemoryMax=`` and
+    ``free``.
     """
     if isinstance(size, int):
         return size
@@ -47,7 +49,7 @@ def parse_bytes(size: int | str) -> int:
 class Tile:
     """One piece of a tiled call."""
 
-    #: What to read from the input: the core, plus overlap.
+    #: What to read from the input: the core plus overlap.
     read: tuple[slice, ...]
     #: Where the kept part of the result goes in the output.
     write: tuple[slice, ...]
@@ -57,15 +59,18 @@ class Tile:
 
 @dataclass(frozen=True)
 class TilePlan:
-    """How a call is cut up, and what each piece costs."""
+    """How an input is cut into tiles, and the peak memory of the largest."""
 
+    #: The input's shape.
     shape: tuple[int, ...]
     #: The core of a full tile; tiles at the far edges may be smaller.
     tile_shape: tuple[int, ...]
-    overlap: int
+    #: One number for every axis, or one per axis.
+    overlap: int | tuple[int, ...]
     tiles: tuple[Tile, ...]
-    #: Peak bytes for the costliest tile, overlap included.
+    #: Peak bytes of the largest tile, overlap and padding included.
     peak: int
+    #: The budget, in bytes.
     budget: int
 
     @property
@@ -74,11 +79,26 @@ class TilePlan:
 
     @property
     def summary(self) -> str:
-        """One line for a front end to show."""
+        """One line for a GUI to show."""
         if self.calls == 1:
             return "1 tile: the whole input fits"
         size = " x ".join(str(n) for n in self.tile_shape)
-        return f"{self.calls} tiles of {size}, overlap {self.overlap}"
+        overlap = (
+            " x ".join(str(n) for n in self.overlap)
+            if isinstance(self.overlap, tuple)
+            else self.overlap
+        )
+        return f"{self.calls} tiles of {size}, overlap {overlap}"
+
+
+def _per_axis(value: int | Sequence[int], ndim: int, what: str) -> tuple[int, ...]:
+    """One number per axis, from one number or a sequence of them."""
+    if isinstance(value, int):
+        return (value,) * ndim
+    value = tuple(int(n) for n in value)
+    if len(value) != ndim:
+        raise ValueError(f"{what} has {len(value)} values for {ndim} axes")
+    return value
 
 
 def plan_tiles(
@@ -86,45 +106,66 @@ def plan_tiles(
     dtype: Any,
     peak_memory: PeakMemory,
     budget: int | str,
-    overlap: int = 0,
+    overlap: int | Sequence[int] = 0,
     axes: Sequence[int] | None = None,
     extra: int = 0,
+    pad: int | Sequence[int] = 0,
+    tile_shape: Sequence[int] | None = None,
 ) -> TilePlan:
-    """Cut an input of *shape* into tiles whose peak fits *budget*.
+    """Cut an input of *shape* into tiles whose peak memory fits *budget*.
+
+    Starts from the whole input and halves the longest cuttable axis until a
+    tile fits.
 
     Args:
         shape: The input's shape.
-        dtype: The input's dtype, by name or as numpy has it; what
-            ``peak_memory`` counts in when it names no dtype of its own.
-        peak_memory: The op's declaration.
+        dtype: The input's dtype, as a name or a numpy dtype. Used by
+            ``peak_memory`` when it names no dtype of its own.
+        peak_memory: The op's ``PeakMemory``.
         budget: Bytes, or a size such as ``"1G"``.
-        overlap: Pixels each tile reaches past its edges, on cut axes.
-        axes: The axes that may be cut; all of them by default. An axis the
-            op must see whole -- colour, say -- is left out.
-        extra: Bytes per element the caller holds on top of the op's own
-            peak while a tile runs -- its copies of the tile and of the
-            result, on their way to a worker and back.
+        overlap: Pixels a tile reads past its core on each side, on cut axes.
+            One number, or one per axis.
+        axes: The axes that may be cut; all by default. Leave out any the op
+            must see whole, such as colour.
+        extra: Bytes per element the caller holds while a tile runs, on top
+            of the op's peak: its copies of the tile and the result, sent to
+            a worker and back.
+        pad: Pixels the op pads its input by on each side, one number or one
+            per axis. Memory is counted on the padded size.
+        tile_shape: A tile size chosen by the caller, used instead of the
+            largest that fits. Its peak is still computed, but a tile over
+            the budget is not refused.
 
     Raises:
-        ValueError: if even the smallest tile does not fit.
+        ValueError: If even the smallest tile doesn't fit.
     """
     shape = tuple(int(n) for n in shape)
     budget = parse_bytes(budget)
     cuttable = range(len(shape)) if axes is None else tuple(axes)
-    core = list(shape)
+    reach = _per_axis(overlap, len(shape), "overlap")
+    padding = _per_axis(pad, len(shape), "pad")
+    core = (
+        [min(int(n), size) for n, size in zip(tile_shape, shape)]
+        if tile_shape is not None
+        else list(shape)
+    )
 
     def extent(axis: int, size: int) -> int:
-        # An uncut axis is read whole; a cut one, its core plus both sides.
-        return (
-            shape[axis] if size >= shape[axis] else min(size + 2 * overlap, shape[axis])
-        )
+        # An uncut axis is read whole; a cut one, its core plus overlap.
+        if size >= shape[axis]:
+            return shape[axis]
+        return min(size + 2 * reach[axis], shape[axis])
 
     def cost(sizes: list[int]) -> int:
-        elements = math.prod(extent(axis, size) for axis, size in enumerate(sizes))
-        return peak_memory.bytes_for(elements, dtype) + extra * elements
+        read = math.prod(extent(axis, size) for axis, size in enumerate(sizes))
+        # The op works on what it read, padded on every side.
+        worked = math.prod(
+            extent(axis, size) + 2 * padding[axis] for axis, size in enumerate(sizes)
+        )
+        return peak_memory.bytes_for(worked, dtype) + extra * read
 
-    while cost(core) > budget:
-        # Halve the longest side still worth halving.
+    while tile_shape is None and cost(core) > budget:
+        # Halve the longest axis that can still be cut.
         candidates = [axis for axis in cuttable if core[axis] > 1]
         if not candidates:
             raise ValueError(
@@ -140,8 +181,8 @@ def plan_tiles(
         read, write, keep = [], [], []
         for axis, start in enumerate(origin):
             end = min(start + core[axis], shape[axis])
-            pad = overlap if core[axis] < shape[axis] else 0
-            first, last = max(0, start - pad), min(shape[axis], end + pad)
+            side = reach[axis] if core[axis] < shape[axis] else 0
+            first, last = max(0, start - side), min(shape[axis], end + side)
             read.append(slice(first, last))
             write.append(slice(start, end))
             keep.append(slice(start - first, end - first))
@@ -150,7 +191,7 @@ def plan_tiles(
     return TilePlan(
         shape=shape,
         tile_shape=tuple(core),
-        overlap=overlap,
+        overlap=overlap if isinstance(overlap, int) else reach,
         tiles=tuple(tiles),
         peak=cost(core),
         budget=budget,

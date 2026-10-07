@@ -46,8 +46,8 @@ def richardson_lucy(image, psf, mask=None, iterations=100, noncirc=True): ...
 
 | Declaration | Says | Example |
 |---|---|---|
-| `tile` | which inputs are cut; all cut at the same places | image and mask yes, PSF no |
-| `overlap` | how far each tile reaches past its edge, per axis | gaussian `4 * sigma`; decon `psf / 2` |
+| `tile` | which inputs are tiled; all tiled the same way | image and mask yes, PSF no |
+| `overlap` | how far each tile reaches past its edge, per axis | gaussian `4 * sigma`; decon the PSF's reach |
 | `peak_memory` | a multiple of the tile's size, in a named dtype | decon 11x, as float32 |
 | `merge` | how the tiles go back together | crop, blend, boxes, labels |
 | unsplit axes | never cut along these | channels; z for a 3D model |
@@ -217,6 +217,134 @@ same thing: tiling changes their result too, and the merge softens it.
    undoes it.
 4. **Run each tile and merge.**
 
+## The Tiler: the caller's choices
+
+Built: `skop.Tiler`, and `Runner.run(..., tiler=)`. `memory=` is a
+shortcut for `tiler=Tiler(memory)`.
+
+The op declares hints; the caller makes choices. Rather than one keyword
+argument per choice -- memory, overlap, tile size, merge -- the choices go
+in one object, a `Tiler`, passed to the runner:
+
+```python
+tiler = Tiler(memory=0.85, overlap=16)
+runner.run(op, image=image, psf=psf, tiler=tiler)
+```
+
+It is the same pattern as the Recorder: an object that plugs into the
+runner and carries one concern. `out=` stays a separate argument: it says
+where the result goes, which matters whether or not the run is tiled.
+
+### What it holds
+
+| Setting | When the caller sets nothing |
+|---|---|
+| memory budget | 85% of free memory, cgroup limits included; for a GPU op, of the GPU's free memory |
+| tile size | the largest that fits the budget |
+| overlap | the op's hint |
+| merge | the op's hint |
+
+### Settings, and the plan they make
+
+A Tiler holds settings. `tiler.plan(op, args)` turns them into a `TilePlan`
+for this input: "8 tiles of 142 x 394 x 396, overlap 8". This is how axes
+already work: `skop.plan` makes an `AdaptationPlan` that a front end shows
+and the user edits, and the run follows it (0006).
+
+The same `tiler.plan` gives a GUI its preview and the runner its tiles, so
+the two always agree. It replaces today's `skop.runner.tile_plan`.
+
+### In a GUI
+
+1. **Suggest.** Make a default Tiler, plan it, and fill the fields: memory
+   budget, tile size, overlap, and the summary line.
+2. **Override.** The user may change any of them.
+3. **Re-plan.** When the budget changes, the suggested tile size follows,
+   but only what the user has not set changes. A tile size typed by hand
+   stays.
+4. **Run** with the Tiler.
+5. The Tiler drives the preview while the user edits.
+
+### No tiler, and off
+
+No tiler means the default Tiler, so a big image does not crash for
+someone who has never heard of tiling. An input that fits is one tile, run
+whole. `Tiler.off()` never tiles.
+
+### Kinds of tiler
+
+- **Memory:** the budget is RAM. Built.
+- **GPU:** the budget is the GPU's free memory, from `nvidia-smi`, for an
+  op whose `PeakMemory` says `device="gpu"`. Built; the cupy decon op uses
+  it.
+- **Fixed size:** tiles of a set size, for an op that needs them -- a
+  detector without tiling of its own. Not a priority: today's detectors
+  tile themselves.
+
+### The default overlap, for decon
+
+Half the PSF array (the "Rule of Brian") is safe, but the array size says
+little. A measured PSF may be 32 x 32 x 16 or 256 x 256 x 128, depending on
+how it was cropped, and is often a small core in a field of near-zero
+values. Half of 256 is an overlap of 128 on each side: a 512-pixel tile
+then reads 768, and the planner, counting the overlap against the budget,
+shrinks tiles until they are mostly overlap.
+
+So the default should be the PSF's **reach**: the radius, per axis, that
+holds most of its light, capped at half the array. That would be a named
+measure, `Overlap(param="psf", of="reach")`, which the runner works out
+with numpy; the declaration stays data. Half the array, `of="shape"`, stays
+for whoever wants a generous overlap, for very smooth blending. Either way
+the user has the last word, through the Tiler.
+
+A workflow that makes its PSF while it runs, `deconvolve_with_psf`, can't
+measure it before. Its panel estimates the plan with 10 px of overlap and
+of padding; the run uses the op's own rule, with the real PSF, the same as
+the op run on its own.
+
+### Tiled decon, circulant or not
+
+Both work tiled. Measured on the GPU against the untiled result, a
+48 x 512 x 768 volume of blurred points, 4 tiles, blended:
+
+| | 1 iteration | 10 iterations |
+|---|---|---|
+| non-circulant, overlap half the PSF | 1e-6 of the peak | 5e-5 |
+| non-circulant, overlap 10 px | 6e-6 | 5e-4 |
+| circulant, 32+ px from the image's edges | 5e-7 | 1e-4 |
+
+Circulant differs only at the image's own edges, by up to 40% of the peak:
+a tile wraps its edges onto each other differently from the whole image.
+Circulant is wrong there anyway, untiled too. Non-circulant handles the
+edges, which is why clij2-fft and tnia-python tile decon non-circulant, and
+why the decon workflow defaults to it.
+
+An earlier measurement found tiled circulant "wrong everywhere, by 15%".
+That was a bug: the PSF was centred by array size, so tiles padded to an odd
+size and tiles padded to an even one were deconvolved a pixel apart. The
+PSF is now centred by index (`_pad.pad_psf`).
+
+Blend ramps across the middle half of the overlap only. The outer half,
+nearest the edge of what a tile read, is where the op saw an edge that
+isn't one, and its result there is the least right; ramping out to it made
+blend 100x worse than crop.
+
+### Padding depends on the op's parameters
+
+Non-circulant decon pads by part of the PSF: half for a rigorous result,
+less as a shortcut that saves time. Circulant decon does not pad at all.
+So the padding hint has to read the op's own parameters. Built for
+`noncirc`: an `Overlap` can apply only when a parameter is true, with
+another value when it is false, and the RL ops use that for both their
+overlap and their padding:
+
+    Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc", otherwise=10)
+    Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc")  # padding
+
+Non-circulant: half the PSF of overlap, and half the PSF of padding.
+Circulant: 10 px of overlap, and no padding. Not yet: a pad fraction other
+than a half, for the shortcut.
+
 ## Lazy inputs (case 1)
 
 A zarr or dask array too big for RAM. Decided: the runner reads it one tile
@@ -336,7 +464,8 @@ And four things they do that this design should avoid:
   Hence step 3's edge rule.
 - **Overlap not from the PSF.** A fixed 10 px whatever the PSF.
 - **Crop, not blend.** Decon's influence reaches past any overlap, so every
-  tile edge is slightly wrong, and cropping shows it as a seam.
+  tile edge is slightly wrong, and cropping shows it as a seam. Both RL ops
+  here blend.
 
 ## Not now
 
@@ -354,7 +483,9 @@ And four things they do that this design should avoid:
 
 - The exact declarative form of level 3, and whether `Overlap` and
   `PeakMemory` are objects or keyword arguments on `@op`.
-- VRAM as the budget for a GPU op.
+- How to measure a PSF's reach: the radius holding 99% of its light, or
+  where it falls below 1% of its peak. Energy is less sensitive to noise in
+  a measured PSF.
 - Whether measured `peak_memory` is cached, and where.
 - How a detector's boxes merge across outer pieces, when an
   `ImageOf[np.ndarray]` op is tiled on both levels.

@@ -30,6 +30,11 @@ from skop.ops.kernels.gibson_lanni import gibson_lanni
 from skop.ops.kernels.psf import gaussian_psf
 from skop.types import ImageData
 
+#: Non-circulant, as clij2-fft and tnia-python deconvolve in tiles: it
+#: handles the image's edges, where circulant wraps them onto each other
+#: (0017, tiling.md). Settings given for the deconvolver are added to these.
+DECON_DEFAULTS = {"noncirc": True}
+
 
 class Deconvolved(NamedTuple):
     """What each stage produced, in the order the stages ran.
@@ -61,7 +66,7 @@ def deconvolve_with_psf(
     ] = richardson_lucy,
     decon_args: Annotated[
         dict | None, ParamsFor("decon_op", binds=("image", "psf"))
-    ] = None,
+    ] = DECON_DEFAULTS,
 ) -> Deconvolved:
     """Deconvolve an image with a freshly generated PSF.
 
@@ -74,7 +79,8 @@ def deconvolve_with_psf(
         decon_op: Which deconvolver to use. ``gpu`` needs CUDA and cupy, and
             picking it triggers an environment build the first time.
         decon_args: Settings for the chosen deconvolver, minus the image and
-            the PSF, which this workflow supplies.
+            the PSF, which this workflow supplies. ``noncirc`` is on unless
+            they turn it off.
 
     Returns:
         psf: The PSF it was deconvolved with.
@@ -90,6 +96,7 @@ def deconvolve_with_psf(
     psf = run(psf_op, **(psf_args or {}))
 
     progress("Deconvolving")
-    restored = run(decon_op, image=image, psf=psf, **(decon_args or {}))
+    settings = {**DECON_DEFAULTS, **(decon_args or {})}
+    restored = run(decon_op, image=image, psf=psf, **settings)
 
     return Deconvolved(np.asarray(psf), np.asarray(restored))

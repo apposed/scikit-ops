@@ -12,7 +12,7 @@ from typing import Annotated
 
 import numpy as np
 
-from skop import cancel_requested, op, progress
+from skop import Axes, Overlap, PeakMemory, cancel_requested, op, progress
 
 from ._edges import pad_and_mask
 
@@ -21,9 +21,27 @@ from ._edges import pad_and_mask
 DELTA = 1e-6
 
 
-@op(env="skimage")
+#: Non-circulant: half the PSF, per axis, how far it reaches at most; safe,
+#: if often more than the light needs. Circulant: 10 px, as clij2-fft and
+#: tnia-python use. A Tiler can set either.
+_OVERLAP = Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc", otherwise=10)
+#: Non-circulant pads by half the PSF on each side; circulant doesn't pad.
+_PAD = Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc")
+
+
+@op(
+    env="skimage",
+    # As richardson_lucy_cupy: the mask tiled the same as the image, z never
+    # cut. In RAM and in float64, numpy's FFT precision; 10x is a guess, not
+    # yet measured, counted on the padded size.
+    tile=("image", "mask"),
+    split=("y", "x"),
+    overlap=_OVERLAP,
+    peak_memory=PeakMemory(10, "float64", pad=_PAD),
+    merge="blend",
+)
 def richardson_lucy(
-    image: np.ndarray,
+    image: Annotated[np.ndarray, Axes("z?", "y", "x")],
     psf: np.ndarray,
     num_iters: Annotated[int, {"min": 1, "max": 1000}] = 10,
     noncirc: bool = False,

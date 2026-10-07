@@ -7,20 +7,31 @@
 - Tiling inside an op: `skop.ops.detect.yolo` picks tiles from
   `object_size`, batches them on the GPU with memory measured as it runs,
   and merges boxes across tiles.
-- The declarations on `@op`: `tile`, `overlap`, `peak_memory`, `merge`
+- The declarations on `@op`: `tile`, `overlap` (per axis, from a number or
+  an array's shape), `peak_memory` (with padding), `merge`, `split`
   (opspec), and the planner that turns them into tiles (`opspec.tiling`).
 - The runner tiling an op on the host: `Runner.run(..., memory=)`, with a
-  default budget of 85% of available memory, cgroup limits included. Crop
-  merge only. `gaussian` declares its hints.
-- A memory budget box in skop-napari, which says how a run will be tiled.
+  default budget of 85% of available memory, cgroup limits included.
+  Several inputs tiled the same way (an image and its mask). Crop and blend
+  merges. `gaussian` and both Richardson-Lucy ops declare their hints.
+- The Tiler: the caller's tiling choices (budget, tile size, overlap) in one
+  object, `Runner.run(..., tiler=)`. A workflow passes it on to the ops it
+  runs.
+- A GPU memory budget, from `nvidia-smi`, so the cupy decon op is tiled.
+- In skop-napari: budget, tile size and overlap fields, and a line saying
+  how a run will be tiled. For a workflow too: the deconvolution workflow
+  defaults to non-circulant, and estimates its plan with 10 px of overlap,
+  since its PSF is made while it runs.
+- Hints that depend on the op's parameters: RL's overlap and padding are
+  half the PSF non-circulant, and 10 px and none circulant
+  (`Overlap(only_if=...)`).
 - Test scripts that run ops under a memory cap: `zarr-idr0079-*.py`,
   `yolo-*.py`.
 
 **Not built yet**
 
-- Blend merge, tiling several inputs together, and tiling combined with
-  axis slicing.
-- VRAM as the budget for a GPU op.
+- Tiling combined with axis slicing.
+- The PSF's reach as the default decon overlap (tiling.md).
 - Lazy input: getting a zarr into the worker, so an op can take
   `ImageOf[Array]`.
 - Contrast limits for the whole image, before `yolo` stretches each tile.

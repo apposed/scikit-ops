@@ -71,13 +71,14 @@ def richardson_lucy_cupy(
   first sliced into volumes by the axis machinery, and each volume is then
   tiled for memory if it needs to be. Slicing and tiling stack; they are not
   the same thing.
-- **`tile=("image", "mask")`.** The mask is cut with the image, at the same
-  places. The PSF is not cut: every tile gets all of it.
-- **Overlap half the PSF**, per axis -- the "Rule of Brian" in clij2-fft.
-  Only a default. Each iteration spreads a pixel's influence by another PSF
-  radius, so in theory every pixel affects every other and no overlap is
-  exact. In practice the influence fades fast; how much overlap is enough is
-  an art, and the user can raise or lower it.
+- **`tile=("image", "mask")`.** The mask is tiled the same as the image.
+  The PSF is not tiled: every tile gets all of it.
+- **Overlap from the PSF**, per axis. Half the PSF array is the "Rule of
+  Brian" in clij2-fft, and safe; the PSF's reach, the radius holding most of
+  its light, is often far less (tiling.md, "The default overlap"). Each
+  iteration spreads a pixel's influence by another PSF radius, so in theory
+  no overlap is exact. In practice the influence fades fast; how much
+  overlap is enough is an art, and the user can raise or lower it.
 - **Blend, not crop.** Since no overlap is exact, the edge of every tile is
   a little wrong, and cropping leaves a visible seam where two tiles meet.
   A linear blend across the overlap -- each tile weighted down towards its

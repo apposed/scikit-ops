@@ -90,6 +90,7 @@ __all__ = [
     "Role",
     "Runner",
     "Slot",
+    "Tiler",
     "TypeSpec",
     "cancel_requested",
     "discover",
@@ -101,7 +102,12 @@ __all__ = [
     "type_spec",
 ]
 
-_LAZY = {"Runner": "runner", "run": "runner", "discover": "discovery"}
+_LAZY = {
+    "Runner": "runner",
+    "run": "runner",
+    "discover": "discovery",
+    "Tiler": "_tiling",
+}
 
 
 def __getattr__(name: str) -> Any:

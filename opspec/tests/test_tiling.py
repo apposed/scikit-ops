@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import math
+from typing import Annotated
 
 import numpy as np
 import pytest
 
-from opspec.op import OpSpec, Overlap, PeakMemory, op
+from opspec.op import Axes, OpSpec, Overlap, PeakMemory, op
 from opspec.tiling import parse_bytes, plan_tiles
 
 # -- the hints --------------------------------------------------------------
@@ -156,3 +157,85 @@ def test_a_callers_own_copies_count_against_the_budget():
     with_copies = plan_tiles((64, 64), "uint8", PeakMemory(scale=1), 2048, extra=3)
     assert with_copies.calls > alone.calls
     assert with_copies.peak <= with_copies.budget
+
+
+# -- per-axis overlap, padding and split ------------------------------------
+
+HALF_PSF = Overlap(param="psf", of="shape", scale=0.5)
+
+
+def test_an_overlap_can_be_half_an_arrays_shape():
+    # Rounded down: half a kernel of 31 is 15, exactly how far it reaches.
+    assert HALF_PSF.resolve({"psf": np.zeros((31, 64, 65))}) == (15, 32, 32)
+    assert Overlap.from_dict(json.loads(json.dumps(HALF_PSF.to_dict()))) == HALF_PSF
+
+
+def test_each_axis_reaches_its_own_overlap():
+    plan = plan_tiles((8, 100, 100), "uint8", PeakMemory(1), 20_000, overlap=(0, 2, 5))
+    assert plan.calls > 1
+    interior = [t for t in plan.tiles if t.read[1].start > 0 and t.read[2].start > 0]
+    assert all(t.write[1].start - t.read[1].start == 2 for t in interior)
+    assert all(t.write[2].start - t.read[2].start == 5 for t in interior)
+    assert plan.summary.endswith("overlap 0 x 2 x 5")
+
+
+def test_padding_counts_against_the_budget():
+    peak = PeakMemory(1)
+    unpadded = plan_tiles((64, 64), "uint8", peak, 2048)
+    padded = plan_tiles((64, 64), "uint8", peak, 2048, pad=8)
+    assert padded.calls > unpadded.calls
+    assert padded.peak <= padded.budget
+
+
+def test_padding_survives_the_wire():
+    peak = PeakMemory(10, "float64", pad=HALF_PSF)
+    assert PeakMemory.from_dict(json.loads(json.dumps(peak.to_dict()))) == peak
+
+
+def test_split_names_the_axes_a_tile_may_be_cut_along():
+    @op(tile="image", peak_memory=PeakMemory(1), split=("y", "x"))
+    def deconvolve(
+        image: Annotated[np.ndarray, Axes("z?", "y", "x")], psf: np.ndarray
+    ) -> np.ndarray:
+        return image
+
+    spec = OpSpec.from_op(deconvolve)
+    assert spec.split == ("y", "x")
+    assert OpSpec.from_dict(json.loads(json.dumps(spec.to_dict()))).split == ("y", "x")
+
+
+def test_split_must_name_axes_the_input_has():
+    @op(tile="image", peak_memory=PeakMemory(1), split=("t",))
+    def wrong(image: Annotated[np.ndarray, Axes("z", "y", "x")]) -> np.ndarray:
+        return image
+
+    with pytest.raises(TypeError, match="splits along t"):
+        OpSpec.from_op(wrong)
+
+
+def test_a_gpu_peak_says_so_on_the_wire():
+    peak = PeakMemory(16, "float32", device="gpu")
+    assert PeakMemory.from_dict(json.loads(json.dumps(peak.to_dict()))) == peak
+    # A CPU peak's wire form is as it was before devices existed.
+    assert "device" not in PeakMemory(2).to_dict()
+
+
+def test_a_tile_size_set_by_the_caller_is_kept():
+    plan = plan_tiles(
+        (10, 100, 100), "uint8", PeakMemory(1), 10, tile_shape=(10, 40, 40)
+    )
+    assert plan.tile_shape == (10, 40, 40)
+    assert (coverage(plan) == 1).all()
+
+
+def test_an_overlap_can_depend_on_a_flag():
+    rule = Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc", otherwise=10)
+
+    class Psf:
+        shape = (31, 15, 15)
+
+    assert rule.resolve({"psf": Psf(), "noncirc": True}) == (15, 7, 7)
+    assert rule.resolve({"psf": Psf(), "noncirc": False}) == 10
+    # Off, the PSF isn't needed at all.
+    assert rule.resolve({"noncirc": False}) == 10
+    assert Overlap.from_dict(rule.to_dict()) == rule
