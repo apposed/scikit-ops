@@ -73,7 +73,7 @@ instanseg-torch = "*"
 # because skop.host.INIT puts src at sys.path[0]. See
 # docs/spec/fiji-front-end.md; it becomes an ordinary version constraint
 # once scikit-ops is released.
-scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "e3585f82d175a62c9f46abad7f8105165b58d30c" }
+scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "00925fea3d92f3c974b7b1ec67d6633307d27bcc" }
 
 [target.linux-64.dependencies]
 pytorch-gpu = "*"

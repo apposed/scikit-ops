@@ -24,7 +24,12 @@ cuda = "12.0"
 python = "3.11.*"
 numpy = "*"
 cellpose = ">=3,<4"
-appose = ">=0.11"
+# appose comes with the pinned scikit-ops below, as in envs/pytorch.
+
+[pypi-dependencies]
+# Pinned, as in every environment: a Fiji with no scikit-ops checkout runs
+# this copy. See envs/pytorch for why the pin is deliberate.
+scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "00925fea3d92f3c974b7b1ec67d6633307d27bcc" }
 
 # PyTorch varies by platform: CUDA builds where there are GPUs to use,
 # and the plain package on Apple Silicon, where MPS comes built in.
