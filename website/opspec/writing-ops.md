@@ -7,39 +7,67 @@ An op is a plain Python function.
 ```python
 from opspec.op import Overlap, PeakMemory, op
 
-@op                                  # runs where it's called
-@op(env="skimage")                   # runs in an environment
-@op(env="pytorch", exclusive=True)   # a worker of its own
+@op                                  # runs in host environment
+@op(env="skimage")                   # runs in a worker environment
+@op(env="pytorch", exclusive=True)   # runs in it's own worker environment 
 @op(env="napari", main_thread=True)  # needs the main thread
 ```
 
-Tiling hints, all optional. A runner tiles an input only when it would not
-fit in memory:
+Tiling hints are optional. The runner can use this information to tile an
+input that the op cannot process in memory. Note that it is not just a matter
+of the input fitting in memory, but also the other parameters and any computation
+buffers (for example FFTs, conv-nets, etc.) that the algorithm needs.
+
+Tiling uses the following:
+
+- `tile`: the inputs that will be tiled the same way
+- `split`: the axes for tiling (default: any axis)
+- `overlap`: how far each tile goes past the edge, in pixels or as a
+  function of a parameter
+- `peak_memory`: how many times the input size the op needs for computation
+  buffers
+- `merge`: how the tiles are put back together, `"crop"` (keep each tile's
+  core, drop the overlap) or `"blend"` (neighbours mixed)
+
+Example op decorators with tiling. A simple one:
+
+```python
+@op(env="skimage", tile="image", overlap=16, merge="crop")
+def smooth(image: np.ndarray, sigma: float = 2.0) -> np.ndarray:
+    return skimage.filters.gaussian(image, sigma)
+```
+
+And one with all the hints:
 
 ```python
 @op(
     env="cupy",
-    tile=("image", "mask"),         # inputs cut into tiles, all the same way
-    split=("y", "x"),               # axes a tile may be cut along; default any
-    overlap=Overlap(param="psf", of="shape", scale=0.5),  # half the PSF
-    peak_memory=PeakMemory(16, "float32", device="gpu"),  # 16 copies of the input
-    merge="blend",                  # neighbours fade together
+    tile=("image", "mask"),         # list of inputs that will be tiled
+    split=("y", "x"),               # axes for tiling
+    overlap=Overlap(param="psf", of="shape", scale=0.5),  # an overlap that is a function of a parameter
+    peak_memory=PeakMemory(16, "float32", device="gpu"),  # op needs 16 times input for computational buffers
+    merge="blend",                  # blend using merge
 )
 ```
 
-Simpler forms: `tile="image"`, `overlap=16` (pixels), `merge="crop"` (keep
-each tile's core, drop the overlap).
-
 ## Annotations
+
+An array parameter has two kinds of type. The **array type** is the
+container the op receives: `np.ndarray` for numpy only, or `Array` for any
+array (numpy, cupy, dask, zarr, xarray). The **dtype** is the kind of number
+inside it: `uint8`, `uint16`, `float32` and so on.
 
 | You write | It means |
 |---|---|
-| `ImageOf[np.ndarray]` | an image |
-| `LabelsOf[np.ndarray]` | labels |
+| `ImageOf[np.ndarray]` | an image that uses numpy array |
+| `ImageOf[Array]` | an image of an Array type; the op uses only `shape`, `dtype` and indexing |
+| `ImageOf[MyArrayProtocol]` | an image that uses a hypothetical array protocol |
+| `LabelsOf[np.ndarray]` | a label that uses numpy array |
 | `MasksOf`, `BoxesOf`, `PointsOf` | other roles |
 | `Annotated[np.ndarray, Axes("y", "x")]` | 2-D; stacks are looped |
 | `Axes("y", "x", "c?")` | optional channel axis |
 | `Axes(variadic=True)` | any number of axes |
+| `Annotated[ImageOf[np.ndarray], Dtype("uint8", "uint16")]` | only these dtypes |
 | `Annotated[float, {"min": 0, "max": 10}]` | a slider's range |
 | an `Enum` | a dropdown |
 | `Path` | a file picker |
@@ -72,6 +100,23 @@ def smooth(image: ImageOf[np.ndarray], sigma: float = 2.0) -> ImageOf[np.ndarray
     from skimage.filters import gaussian  # heavy imports go inside
 
     return gaussian(image, sigma)
+```
+
+### Any array type: one plane, read lazily
+
+```python
+from typing import Annotated
+
+from opspec.op import Axes, op
+from opspec.types import Array, ImageOf
+
+@op
+def middle_plane(
+    image: Annotated[ImageOf[Array], Axes("z", "y", "x")],
+) -> ImageOf[Array]:
+    """The middle z plane. The op only indexes, so a zarr or dask volume
+    is never loaded whole."""
+    return image[image.shape[0] // 2]
 ```
 
 ### Labels out, with a dropdown and a slider
@@ -165,12 +210,19 @@ def custom_model(image: ImageOf[np.ndarray], weights: Path) -> LabelsOf[np.ndarr
 ### Writing into the caller's array
 
 ```python
+from typing import Annotated
+
 import numpy as np
-from opspec.op import Out, op
+from opspec.op import Dtype, Out, op
 from opspec.types import ImageOf
 
+UNSIGNED = Dtype("uint8", "uint16")  # max - image stays positive
+
 @op(env="skimage")
-def invert(image: ImageOf[np.ndarray], result: Out[ImageOf[np.ndarray]]) -> None:
+def invert(
+    image: Annotated[ImageOf[np.ndarray], UNSIGNED],
+    result: Out[Annotated[ImageOf[np.ndarray], UNSIGNED]],
+) -> None:
     result[...] = image.max() - image
 ```
 
@@ -180,7 +232,7 @@ def invert(image: ImageOf[np.ndarray], result: Out[ImageOf[np.ndarray]]) -> None
 from typing import Annotated
 
 import numpy as np
-from opspec.op import Axes, Overlap, PeakMemory, op
+from opspec.op import Axes, Dtype, Overlap, PeakMemory, op
 from opspec.types import ImageOf
 
 HALF_PSF = Overlap(param="psf", of="shape", scale=0.5)
@@ -194,8 +246,8 @@ HALF_PSF = Overlap(param="psf", of="shape", scale=0.5)
     merge="blend",
 )
 def deconvolve(
-    image: Annotated[ImageOf[np.ndarray], Axes("z?", "y", "x")],
-    psf: np.ndarray,
+    image: Annotated[ImageOf[np.ndarray], Axes("z?", "y", "x"), Dtype("float32")],
+    psf: Annotated[np.ndarray, Dtype("float32")],
     iterations: int = 10,
 ) -> ImageOf[np.ndarray]:
     import cupy as cp
