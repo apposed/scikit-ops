@@ -236,6 +236,70 @@ def axes_of(annotation: Any) -> Axes | None:
     return None
 
 
+# -- dtypes: what kind of number an array holds ---------------------------
+
+# numpy's names, listed here so opspec doesn't have to import numpy.
+DTYPE_NAMES = frozenset(
+    {
+        "bool",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float16",
+        "float32",
+        "float64",
+        "complex64",
+        "complex128",
+    }
+)
+
+
+@dataclass(frozen=True, init=False)
+class Dtype:
+    """The dtypes an op takes for an array, by numpy name::
+
+        Dtype("uint8", "uint16")  # either of these
+        Dtype("float32")          # only float32
+
+    Left out, any dtype. opspec only declares; converting another dtype is
+    the runner's job. Ignored when the op is called directly.
+    """
+
+    names: tuple[str, ...]
+
+    def __init__(self, *names: str) -> None:
+        if not names:
+            raise ValueError("Dtype needs at least one dtype, as Dtype('uint8')")
+        unknown = [name for name in names if name not in DTYPE_NAMES]
+        if unknown:
+            raise ValueError(
+                f"Unknown dtype {unknown[0]!r}; use numpy's names, such as "
+                "'uint8', 'uint16' or 'float32'"
+            )
+        object.__setattr__(self, "names", tuple(names))
+
+    def __repr__(self) -> str:
+        return f"Dtype({', '.join(repr(name) for name in self.names)})"
+
+
+def dtype_of(annotation: Any) -> Dtype | None:
+    """Read the ``Dtype`` off an annotation, or ``None``.
+
+    Reads through ``X | None``, as ``axes_of`` does.
+    """
+    annotation = _unwrap_optional(annotation)
+    if get_origin(annotation) is Annotated:
+        for meta in get_args(annotation)[1:]:
+            if isinstance(meta, Dtype):
+                return meta
+    return None
+
+
 # -- directions: who allocates the arrays --------------------------------
 
 
@@ -823,6 +887,8 @@ class ParamSpec:
     default: Any
     role: Role | None = None
     axes: Axes | None = None
+    #: The dtypes the op takes for this array; None for any.
+    dtype: Dtype | None = None
     ui: dict = field(default_factory=dict)
     #: None for an input, OUT for a caller-allocated buffer, MUT for one the
     #: op modifies in place.
@@ -848,6 +914,8 @@ class ParamSpec:
             data["role"] = self.role.value
         if self.axes is not None:
             data["axes"] = _axes_dict(self.axes)
+        if self.dtype is not None:
+            data["dtype"] = list(self.dtype.names)
         if self.ui:
             data["ui"] = dict(self.ui)
         if self.direction is not None:
@@ -881,6 +949,7 @@ class ParamSpec:
             ),
             role=Role(data["role"]) if data.get("role") else None,
             axes=_axes_from_dict(data["axes"]) if data.get("axes") else None,
+            dtype=Dtype(*data["dtype"]) if data.get("dtype") else None,
             ui=dict(data.get("ui", {})),
             direction={"Out": OUT, "Mut": MUT}.get(data.get("direction", "")),
             choices=_choices_from_dict(data.get("choices")),
@@ -1163,6 +1232,7 @@ class OpSpec:
                     default=param.default,
                     role=role_of(annotation),
                     axes=axes_of(annotation),
+                    dtype=dtype_of(annotation),
                     ui=_ui_hints(annotation),
                     direction=direction_of(annotation),
                     choices=choices_of(annotation),
