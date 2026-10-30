@@ -64,7 +64,7 @@ real denominator.
 
 `PixiInstallMonitor` landed in appose-python commit `3e97f55` and has never
 been released; 0.11 has no monitor at all and reports only a final summary
-line. Both this project and `skop-napari` therefore source Appose from its main
+line. Both this project and `napari-skopkit` therefore source Appose from its main
 branch:
 
 ```toml

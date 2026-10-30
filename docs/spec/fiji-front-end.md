@@ -2,19 +2,19 @@
 
 **Status:** P0 through P3 built, and P4's axis-mapping UI with them; the
 environment manager and the update site are what is left. The plan for
-`skop-fiji`, the second front end, written against what
+`fiji-skopkit`, the second front end, written against what
 [front-ends.md](front-ends.md) says the boundary is and what
-[skop-napari](https://github.com/apposed/skop-napari) learned building the
+[napari-skopkit](https://github.com/apposed/napari-skopkit) learned building the
 first one. The P0 half lives here — `oprunner.host`, and `to_dict`/`from_dict` on
 `OpSpec`; the Java half lives in
-[skop-fiji](https://github.com/apposed/skop-fiji).
+[fiji-skopkit](https://github.com/apposed/fiji-skopkit).
 
-Working name `skop-fiji`; Maven coordinate `org.apposed:skop-fiji`; package
+Working name `fiji-skopkit`; Maven coordinate `org.apposed:fiji-skopkit`; package
 `org.apposed.skop.fiji`; distributed as a Fiji update site.
 
 ## The headline: one command per op
 
-skop-napari's [design 0002](https://github.com/apposed/skop-napari/blob/main/docs/design/0002-one-panel-for-all-ops.md)
+napari-skopkit's [design 0002](https://github.com/apposed/napari-skopkit/blob/main/docs/design/0002-one-panel-for-all-ops.md)
 settled for a single Ops panel with a picker inside it, because npe2 wants a
 static manifest and skop finds its ops by importing them. That compromise is
 not needed here. SciJava registers modules at runtime —
@@ -26,7 +26,7 @@ becomes its own command**:
 - with a dialog the input harvester generates from the module's items;
 - individually scriptable and macro-recordable.
 
-skop-napari's [dynamic-registration.md](https://github.com/apposed/skop-napari/blob/main/docs/spec/dynamic-registration.md)
+napari-skopkit's [dynamic-registration.md](https://github.com/apposed/napari-skopkit/blob/main/docs/spec/dynamic-registration.md)
 describes a napari feature that has not landed. Fiji has had it for a decade,
 so the Fiji front end starts where the napari one hopes to end up. There is no
 op-picker panel; the search bar *is* the browse view.
@@ -87,7 +87,7 @@ None of this is Fiji-shaped; it is the serialized half of the contract that
 2. **A wire vocabulary for `ParamSpec.type`.** It is a live Python type object
    today. Java needs names: `int`, `float`, `str`, `bool`, `ndarray`, `path`,
    `enum` (with its choices), and `unknown`. `unknown` is what lets the Fiji
-   side reproduce skop-napari [design 0003](https://github.com/apposed/skop-napari/blob/main/docs/design/0003-building-input-widgets.md)'s
+   side reproduce napari-skopkit [design 0003](https://github.com/apposed/napari-skopkit/blob/main/docs/design/0003-building-input-widgets.md)'s
    sorting: a parameter it cannot render is left at its default and reported,
    or, if it is required, disables the run and says why. One awkward parameter
    must not cost the whole op.
@@ -165,7 +165,7 @@ populates the menu immediately.
 ## Roles → Fiji
 
 The lookup table that is the only Fiji-specific part of the front end, the
-counterpart of `skop_napari/_roles.py`.
+counterpart of `napari_skopkit/_roles.py`.
 
 | Role | Fiji |
 | --- | --- |
@@ -198,7 +198,7 @@ Guessing a role for an unannotated array happens here, never in skop —
 
 ## Axes: Fiji knows them, and the order is reversed
 
-skop-napari spends a module (`_axes.py`) working out what a layer's axes are,
+napari-skopkit spends a module (`_axes.py`) working out what a layer's axes are,
 from metadata, xarray dims, NGFF axes, `axis_labels` and `rgb`, and leaves
 unnamed whatever none of those say. `ImgPlus` **carries `CalibratedAxis` labels
 explicitly**, so the Fiji side reads what it is told and only falls back to
@@ -214,7 +214,7 @@ plausible, wrong answer. It is the first thing to write a round-trip test for,
 before any UI exists.
 
 The mapping UI itself (a combo per slot, and iterate / current position / pass
-per leftover axis, per skop-napari design 0007) does not fit a statically
+per leftover axis, per napari-skopkit design 0007) does not fit a statically
 harvested dialog, since the items depend on the shape of an image the user has
 not chosen yet.
 
@@ -254,7 +254,7 @@ in the dialog is refused rather than misapplied.
 ## Threading, progress, cancellation, errors
 
 SciJava already runs modules off the EDT, so there is no equivalent of
-skop-napari `_run.py`'s thread-worker plumbing. A run is a SciJava `Task`, so
+napari-skopkit `_run.py`'s thread-worker plumbing. A run is a SciJava `Task`, so
 it appears in the status bar and the task list; Appose's `TaskEvent`s drive
 its message and progress, and Stop in the task widget and Cancel in the
 dialog both reach the Appose task, which `skop.cancel_requested()` reads on
@@ -274,15 +274,15 @@ the front end also wants a `Plugins ▸ scikit-ops ▸ Manage Environments`
 command: list what is built, prebuild one deliberately, delete one that went
 wrong.
 
-Errors follow the same reasoning as skop-napari's: the interesting part of a
+Errors follow the same reasoning as napari-skopkit's: the interesting part of a
 failure is another interpreter's traceback, so it goes to `LogService` in full
 and to a dialog, rather than into a one-line field.
 
 ## Environment cache location
 
 Appose's default shared directory, not somewhere under the Fiji installation.
-That is where skop puts environments already, which means **skop-napari and
-skop-fiji share built environments** — a user who has already paid for the
+That is where skop puts environments already, which means **napari-skopkit and
+fiji-skopkit share built environments** — a user who has already paid for the
 `stardist-tf` build in napari does not pay again in Fiji.
 
 ## Layout
@@ -330,7 +330,7 @@ wire/                the OpSpec JSON reading
 - ~~What an op with a `MasksData` output offers by default: the ROI Manager, a
   projection, or a choice.~~ Settled: ROIs, one per mask, in a `ROITree`.
   imagej-legacy is what carries that to the ROI Manager, so nothing in
-  skop-fiji has to know ImageJ1 exists — and overlapping masks stay
+  fiji-skopkit has to know ImageJ1 exists — and overlapping masks stay
   overlapping, which was the whole argument for the role reaching Fiji as
   ROIs. A projection is then one of several things a user may ask for.
 - Whether the ImageJ1 side needs anything beyond imagej-legacy's

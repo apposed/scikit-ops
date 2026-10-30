@@ -29,7 +29,7 @@ Two workflows and the machinery to render them, 2026-07-28.
   the warm workers, and a sub-op's progress and cancellation reach the panel.
   Mode B is unaffected — outside a run, `oprunner.run` falls through to the default
   runner.
-- **skop-napari draws a workflow with one combo box per stage**, the chosen
+- **napari-skopkit draws a workflow with one combo box per stage**, the chosen
   op's own widgets underneath, rebuilt on change. Nearly free: the widgets
   under a chooser are built by the same `build_inputs` that builds the panel's.
   It is a second widget contribution, `Workflows`, which is also what earns

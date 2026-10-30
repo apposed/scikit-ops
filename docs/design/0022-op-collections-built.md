@@ -32,8 +32,8 @@ reconciling.
 - **The helpers are their own package, `ophelper`** (`./ophelper`): boxes,
   masks and model downloads, numpy and opspec only. tnia-ops'
   `object_boxes` uses it.
-- **A collection registers itself** with an entry point, and skop-napari
-  lists every one installed (`SKOP_NAPARI_COLLECTION=tnia-ops` narrows it):
+- **A collection registers itself** with an entry point, and napari-skopkit
+  lists every one installed (`NAPARI_SKOPKIT_COLLECTION=tnia-ops` narrows it):
 
   ```toml
   [project.entry-points."opspec.collections"]
@@ -46,7 +46,7 @@ reconciling.
   each front end need not. 0021 also wants a fallback for an install made
   before the entry point existed, which today shows no scikit-ops ops at all.
 - **Name clashes are not reported.** Two collections may declare an op of the
-  same name; skop-napari keeps them apart by prefixing each label with its
+  same name; napari-skopkit keeps them apart by prefixing each label with its
   collection, and nothing warns.
 - **Fiji sees only `skop.ops`.** Its runner has one ops folder and one
   `envs/`. Entry points do not help there: they exist only on the host, and

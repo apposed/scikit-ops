@@ -3,14 +3,14 @@
 # dependencies = [
 #     "napari[pyqt6]",
 #     "scikit-ops",
-#     "skop-napari",
+#     "napari-skopkit",
 #     "zarr>=3",
 #     "numpy",
 # ]
 #
 # [tool.uv.sources]
 # scikit-ops = { path = "../../..", editable = true }
-# skop-napari = { path = "../../../../skop-napari", editable = true }
+# napari-skopkit = { path = "../../../../skop-napari", editable = true }
 # ///
 """Open a big image in napari at several scales, with YOLO ready to run
 
@@ -28,7 +28,7 @@ with --levels, but an op run on one gets all of it: FastSAM on em level 2
 (840 Mpixels) took ~15 GB before resizing to 1024, and the kernel killed
 it.
 
-Needs yolo-download.py first, and the skop-napari checkout beside this one.
+Needs yolo-download.py first, and the napari-skopkit checkout beside this one.
 
 uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py
 uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py em --levels 3 5 7
@@ -49,7 +49,7 @@ from pathlib import Path
 import napari
 import numpy as np
 import zarr
-from skop_napari._panel import OpsPanel
+from napari_skopkit._panel import OpsPanel
 from yolo_data import open_levels, path
 
 WEIGHTS = Path(__file__).resolve().parents[4] / "i2k-2026" / "models" / "yolo26n.pt"

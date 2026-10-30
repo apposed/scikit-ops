@@ -18,7 +18,7 @@
   object, `Runner.run(..., tiler=)`. A workflow passes it on to the ops it
   runs.
 - A GPU memory budget, from `nvidia-smi`, so the cupy decon op is tiled.
-- In skop-napari: budget, tile size and overlap fields, and a line saying
+- In napari-skopkit: budget, tile size and overlap fields, and a line saying
   how a run will be tiled. For a workflow too: the deconvolution workflow
   defaults to non-circulant, and estimates its plan with 10 px of overlap,
   since its PSF is made while it runs.

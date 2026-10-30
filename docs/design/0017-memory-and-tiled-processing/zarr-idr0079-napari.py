@@ -3,13 +3,13 @@
 # dependencies = [
 #     "napari[pyqt6]",
 #     "scikit-ops",
-#     "skop-napari",
+#     "napari-skopkit",
 #     "zarr>=3",
 # ]
 #
 # [tool.uv.sources]
 # scikit-ops = { path = "../../..", editable = true }
-# skop-napari = { path = "../../../../skop-napari", editable = true }
+# napari-skopkit = { path = "../../../../skop-napari", editable = true }
 # ///
 """Open one zarr layer in napari, with the skop plugin, and a memory cap
 

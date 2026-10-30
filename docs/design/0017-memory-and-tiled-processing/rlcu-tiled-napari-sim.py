@@ -3,13 +3,13 @@
 # dependencies = [
 #     "napari[pyqt6]",
 #     "scikit-ops",
-#     "skop-napari",
+#     "napari-skopkit",
 #     "scipy",
 # ]
 #
 # [tool.uv.sources]
 # scikit-ops = { path = "../../..", editable = true }
-# skop-napari = { path = "../../../../skop-napari", editable = true }
+# napari-skopkit = { path = "../../../../skop-napari", editable = true }
 # ///
 """Tiled Richardson-Lucy on the GPU, in napari, on a simulated volume
 
@@ -40,7 +40,7 @@ import napari
 import numpy as np
 import scipy.fft
 from scipy.signal import fftconvolve
-from skop_napari import OpsPanel
+from napari_skopkit import OpsPanel
 
 import oprunner
 from skop.ops.kernels.gibson_lanni import gibson_lanni

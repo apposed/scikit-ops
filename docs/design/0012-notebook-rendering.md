@@ -11,7 +11,7 @@ unnumbered, and reusing it would make the older commits read wrong.
 
 ## The question
 
-A notebook is the second caller of skop, after skop-napari, and the first one
+A notebook is the second caller of skop, after napari-skopkit, and the first one
 with no viewer. It needs the same two things a panel needs — boxes drawn on an
 image, and an `(N, Y, X)` mask stack drawn on one — using matplotlib rather
 than layers.
@@ -41,7 +41,7 @@ the whole reason this is a placeholder rather than a decision.
 [`docs/spec/front-ends.md`](../spec/front-ends.md) gives the rule: *if a change
 to skop would only make sense to a napari author, it belongs in the front end.*
 A matplotlib renderer is a front end by that test, and the clean answer is a
-`skop-mpl` package mirroring `skop_napari/_roles.py` — twenty lines of
+`skop-mpl` package mirroring `napari_skopkit/_roles.py` — twenty lines of
 `Role` → artist lookup, same shape as the napari one.
 
 The argument against is that these functions are useful well beyond skop:

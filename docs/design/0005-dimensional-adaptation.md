@@ -137,8 +137,8 @@ it holds here for the same reason: a front end guesses because a front end has
 a viewer to guess *for*. skop asks to be told, through
 `axes={"image": ("z", "y", "x")}`, and refuses to invent one.
 
-skop-napari has since built that resolver
-([its 0006](https://github.com/apposed/skop-napari/blob/main/docs/design/0006-axis-awareness.md)),
+napari-skopkit has since built that resolver
+([its 0006](https://github.com/apposed/napari-skopkit/blob/main/docs/design/0006-axis-awareness.md)),
 which settled two things this file had guessed at.
 
 **Writing the answer back is the load-bearing half.** Every resolution goes

@@ -92,7 +92,9 @@ kernel for each.
 
 ## Related repositories (siblings, and required to be)
 
-- `../skop-napari` — the napari front end; depends on this by path source.
+- `../skop-napari` — the napari front end, `napari-skopkit` (the folder keeps
+  its old name); depends on this by path source. `../skop-fiji` is the Fiji
+  one, `fiji-skopkit`.
 - `../tnia-python` — projection figures and the box/mask overlays the notebooks
   draw with. A host dependency only; no op imports it. Its
   [extras](../tnia-python/docs/install.md) landed in 0.2.0, so the dependency

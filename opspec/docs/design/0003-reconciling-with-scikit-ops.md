@@ -34,7 +34,7 @@ for a reason. A difference with no known reason goes scikit-ops' way.
   read the result from `ParamSpec.ui`. opspec's public `ui_hints_of` goes.
 - **`return_type` and `return_role` stay in the wire form.** `to_dict`
   writes them, and `from_dict` reads them rather than rebuilding them from
-  `outputs`. skop-fiji parses them.
+  `outputs`. fiji-skopkit parses them.
 
 ## What opspec gains from scikit-ops
 
@@ -72,9 +72,9 @@ ends as they are.
   opspec; `apply` and `execute`, the `*Data` aliases and `discover` stay.
   `from skop import op, Axes` keeps working. Call sites change for K1, K5,
   K6 and K8, and the runner and worker for K6, which crosses to the worker.
-- **skop-napari.** `.outputs` and `.output_specs` (K5), `Role.boxes` (K1),
+- **napari-skopkit.** `.outputs` and `.output_specs` (K5), `Role.boxes` (K1),
   `uses_all_data` and `from_op` in its tests.
-- **skop-fiji.** `wire/OpSpec.java` reads `outputs` as dicts and drops
+- **fiji-skopkit.** `wire/OpSpec.java` reads `outputs` as dicts and drops
   `output_specs` (K5); `wire/AdaptationPlan.java` reads `uses_all_data`
   (K6); `wire/Role.java` and `Roles.java` take `boxes` (K1); `WireTest.java`'s
   sample dicts follow.

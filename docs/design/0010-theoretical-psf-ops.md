@@ -1,6 +1,6 @@
 # 0010 — Theoretical PSF ops
 
-Second step in migrating deconvolution to skops. This is a follow-up spec,
+Second step in migrating deconvolution to skop. This is a follow-up spec,
 written after testing and working with the first implementation a bit.
 
 In the first iteration we implemented deconvolution and the Gaussian PSF. Now we

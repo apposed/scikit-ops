@@ -179,7 +179,7 @@ conditional shape is two ops, not a conditional-shape language.
   `skop.Slot` and the disposition constants (`ITERATE`, `SELECT`, `PASS`) join it.
 - A front end must now render a mapping *and* dispositions, which is more work
   than a combo box — the cost of the flexibility, paid once per front end. See
-  skop-napari's 0007.
+  napari-skopkit's 0007.
 - `output_axes` is still derived, and now uses the **caller's** vocabulary
   throughout, so a remapped axis keeps the name its owner gave it.
 

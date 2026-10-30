@@ -1,6 +1,6 @@
 # Spec — what a front end needs from skop
 
-**Status:** one front end exists ([skop-napari](https://github.com/apposed/skop-napari));
+**Status:** one front end exists ([napari-skopkit](https://github.com/apposed/napari-skopkit));
 a Fiji one is the next target. This file records what the boundary between skop
 and a front end is, so that the second one does not require changing the first.
 
@@ -32,7 +32,7 @@ supplies a default plan and the warnings against it, never a veto.
 Nothing in that list is napari-shaped. That is the test: if a change to skop
 would only make sense to a napari author, it belongs in the front end.
 
-## What skop-napari proved
+## What napari-skopkit proved
 
 Building the first front end changed skop exactly once, and productively: it
 forced [semantic roles](../design/0003-semantic-roles.md) into existence.
@@ -41,7 +41,7 @@ weak evidence the boundary is in the right place, and it is only weak because
 one front end cannot distinguish "general" from "coincidentally napari-shaped".
 
 The one napari-specific decision — mapping `Role` to a napari type — lives in
-`skop_napari/_roles.py` and is about twenty lines of lookup table.
+`napari_skopkit/_roles.py` and is about twenty lines of lookup table.
 
 ## What a Fiji front end will probably want
 

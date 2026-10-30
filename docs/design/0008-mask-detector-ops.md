@@ -172,7 +172,7 @@ z-stack or a mask stack, which is the guessing 0003 exists to prevent.
 Projection and ordering are **utilities, not ops** — the same call 0007 made
 for `skop.boxes`, and for the same reason: making them ops buys a
 shared-memory round trip and a worker to transpose an array. `src/skop/masks.py`,
-numpy and standard library only, so a worker, the host, and skop-napari can all
+numpy and standard library only, so a worker, the host, and napari-skopkit can all
 import it freely.
 
 That module is where the useful half of `segment_everything/stacked_labels.py`
@@ -185,7 +185,7 @@ lands, as functions over arrays instead of methods on a class:
 | `sort_largest_to_smallest()` | `order_by_area(masks)` — returns the permutation |
 | `from_2d_label_image()` | `from_labels(labels)` — the inverse, for Cellpose or StarDist output |
 
-Four functions, deliberately. `to_labels_2d` is what skop-napari calls to show
+Four functions, deliberately. `to_labels_2d` is what napari-skopkit calls to show
 a `MasksData` output, and `strategy` is where the overlap goes: `"min"` lets
 the lowest label win a contested pixel, `"max"` the highest.
 
@@ -218,7 +218,7 @@ The op always returns the collection. Never a label image, and never a
 every time. Which projection to look at is a display decision, and the op does
 not know what it is being displayed in.
 
-skop-napari makes that decision, and makes it changeable: a dropdown on the
+napari-skopkit makes that decision, and makes it changeable: a dropdown on the
 widget, attached to the `MasksData` output, offering
 
 - **2-D labels** — `to_labels_2d`, one Labels layer, overlap resolved by
@@ -239,7 +239,7 @@ for a decision that touches no model.
 Two consequences worth naming:
 
 **One output can become two layers.** "Both" breaks the output-to-layer
-correspondence that skop-napari otherwise has, and whatever handles it needs to
+correspondence that napari-skopkit otherwise has, and whatever handles it needs to
 name the layers distinguishably and replace the right pair on re-run.
 
 **The stack's first axis is not space.** `N` is a mask index. napari will
@@ -248,7 +248,7 @@ not one, and nothing measured along that axis means anything.
 
 Which means its spacing has no true value, and 1 is a bad guess: ten masks over
 a 512-pixel image at unit spacing is a pancake, and rotating it shows nothing.
-skop-napari therefore gives the stack `scale=(z, 1, 1)` with `z` adjustable and
+napari-skopkit therefore gives the stack `scale=(z, 1, 1)` with `z` adjustable and
 defaulting to 10, and leaves y and x at 1 to match the image. The number is a
 viewing preference, not a property of the data.
 

@@ -28,7 +28,7 @@ GaussianPSF, and numpy deconvolution should be able to re-use the scikit pixi (b
 
 We also want an interactive_test and formal tests.  See interactive_tests/interactive_test_scikit.pyfor example interactive test, this light and informal and for people to play with, should follow that test except use napari instead of matplotlib to view result because easier to see 3d. 
 
-# Plan to migrate old deconvolution to skops
+# Plan to migrate old deconvolution to skop
 
 ## Decisions this plan assumes
 

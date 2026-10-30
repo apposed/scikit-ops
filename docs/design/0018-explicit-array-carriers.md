@@ -57,8 +57,8 @@ answerable by assumption rather than by grep. That is the same
 *we-cannot-tell-which-it-is* problem, relocated.
 
 The argument for keeping it -- that the names mirror `napari.types` -- is
-weaker than it looks. skop-napari maps on the **role**, not the alias name
-(`skop-napari/_roles.py:65`), so renaming breaks nothing mechanical. The
+weaker than it looks. napari-skopkit maps on the **role**, not the alias name
+(`napari-skopkit/_roles.py:65`), so renaming breaks nothing mechanical. The
 mirroring buys familiarity, not behaviour.
 
 The real cost is signature noise, since the carrier repeats:

@@ -21,7 +21,7 @@ The boxes drew correctly in napari. The scores raised:
 ValueError: Image data must have at least 2 dimensions.
 ```
 
-skop-napari's `layer_type_for` falls back to `"image"` for any unannotated
+napari-skopkit's `layer_type_for` falls back to `"image"` for any unannotated
 `np.ndarray`, so a `(24,)` vector of confidences was handed to an Image layer.
 The fallback is a reasonable guess — most role-less arrays *are* pictures — but
 this array is not a picture, and it is not any other layer either.
@@ -70,7 +70,7 @@ So this is not only about `scores`. It is about whether skop can express
 
 ## The choices
 
-1. **Leave it out; make the front end refuse.** Have skop-napari's fallback
+1. **Leave it out; make the front end refuse.** Have napari-skopkit's fallback
    return `None` for arrays with fewer than two dimensions, so they land in the
    results panel instead of a layer. Cheapest, no new vocabulary — but a panel
    of 24 numbers next to 24 boxes is not useful, and it puts the fix in one
