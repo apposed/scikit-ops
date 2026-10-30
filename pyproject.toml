@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scikit-ops"
-version = "0.1.0.dev0"
+version = "0.1.0.dev1"
 description = "Appose-powered ops, and the machinery for running them."
 license = "BSD-2-Clause"
 authors = [{name = "scikit-ops developers"}]
-readme = "README.md"
+readme = "README-pypi.md"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
