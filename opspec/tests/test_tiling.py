@@ -9,7 +9,17 @@ from typing import Annotated
 import numpy as np
 import pytest
 
-from opspec.op import Axes, OpSpec, Overlap, PeakMemory, op
+from opspec.op import (
+    Axes,
+    OpSpec,
+    Overlap,
+    PeakMemory,
+    _overlap_dict,
+    _overlap_from_dict,
+    _peak_memory_dict,
+    _peak_memory_from_dict,
+    op,
+)
 from opspec.tiling import parse_bytes, plan_tiles
 
 # -- the hints --------------------------------------------------------------
@@ -167,7 +177,9 @@ HALF_PSF = Overlap(param="psf", of="shape", scale=0.5)
 def test_an_overlap_can_be_half_an_arrays_shape():
     # Rounded down: half a kernel of 31 is 15, exactly how far it reaches.
     assert HALF_PSF.resolve({"psf": np.zeros((31, 64, 65))}) == (15, 32, 32)
-    assert Overlap.from_dict(json.loads(json.dumps(HALF_PSF.to_dict()))) == HALF_PSF
+    assert (
+        _overlap_from_dict(json.loads(json.dumps(_overlap_dict(HALF_PSF)))) == HALF_PSF
+    )
 
 
 def test_each_axis_reaches_its_own_overlap():
@@ -188,8 +200,11 @@ def test_padding_counts_against_the_budget():
 
 
 def test_padding_survives_the_wire():
-    peak = PeakMemory(10, "float64", pad=HALF_PSF)
-    assert PeakMemory.from_dict(json.loads(json.dumps(peak.to_dict()))) == peak
+    @op(tile="image", peak_memory=PeakMemory(10, "float64"), pad=HALF_PSF)
+    def decon(image: np.ndarray, psf: np.ndarray) -> np.ndarray: ...
+
+    spec = OpSpec.from_op(decon)
+    assert OpSpec.from_dict(json.loads(json.dumps(spec.to_dict()))).pad == HALF_PSF
 
 
 def test_split_names_the_axes_a_tile_may_be_cut_along():
@@ -215,9 +230,11 @@ def test_split_must_name_axes_the_input_has():
 
 def test_a_gpu_peak_says_so_on_the_wire():
     peak = PeakMemory(16, "float32", device="gpu")
-    assert PeakMemory.from_dict(json.loads(json.dumps(peak.to_dict()))) == peak
+    assert (
+        _peak_memory_from_dict(json.loads(json.dumps(_peak_memory_dict(peak)))) == peak
+    )
     # A CPU peak's wire form is as it was before devices existed.
-    assert "device" not in PeakMemory(2).to_dict()
+    assert "device" not in _peak_memory_dict(PeakMemory(2))
 
 
 def test_a_tile_size_set_by_the_caller_is_kept():
@@ -238,4 +255,4 @@ def test_an_overlap_can_depend_on_a_flag():
     assert rule.resolve({"psf": Psf(), "noncirc": False}) == 10
     # Off, the PSF isn't needed at all.
     assert rule.resolve({"noncirc": False}) == 10
-    assert Overlap.from_dict(rule.to_dict()) == rule
+    assert _overlap_from_dict(_overlap_dict(rule)) == rule

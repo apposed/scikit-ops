@@ -15,7 +15,80 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .op import CANONICAL, Axes, OpSpec, ParamSpec, Slot, canonical
+from .axes import Axes, Slot
+from .op import OpSpec, ParamSpec
+
+#: The standard axis names. Other names are allowed too.
+CANONICAL = ("x", "y", "z", "c", "t")
+
+#: Synonyms for the canonical names, from scikit-image, ImageJ, Bio-Formats,
+#: CZI and OME-NGFF: ``row`` is ``y``. Other labels (``lifetime``,
+#: ``batch``) pass through unchanged.
+ALIASES = {
+    "col": "x",
+    "cols": "x",
+    "column": "x",
+    "columns": "x",
+    "row": "y",
+    "rows": "y",
+    "pln": "z",
+    "plane": "z",
+    "planes": "z",
+    "slice": "z",
+    "slices": "z",
+    "ch": "c",
+    "chan": "c",
+    "channel": "c",
+    "channels": "c",
+    "frame": "t",
+    "frames": "t",
+    "time": "t",
+    "timepoint": "t",
+    "timepoints": "t",
+}
+
+
+def canonical(label: str) -> str:
+    """An axis label, lowercased and resolved: ``ROW`` -> ``y``.
+
+    An unknown label is returned lowercased: ``"Lifetime"`` -> ``"lifetime"``.
+    """
+    folded = label.strip().casefold()
+    return ALIASES.get(folded, folded)
+
+
+def check_axes(axes: Axes) -> None:
+    """Raise ValueError if an ``Axes`` can't be used: an empty label, a lone
+    '?', a label with a separator in it, '*?', or the same axis twice."""
+    seen: set[str] = set()
+    for slot in axes.slots:
+        if slot.name is None:
+            if slot.optional:
+                # An optional slot is filled only by name, and a wildcard has
+                # none, so '*?' could never be filled.
+                raise ValueError(
+                    "'*?' is not a usable slot: a wildcard has no name to match "
+                    "on, and an optional slot is filled only by name. Use '*' "
+                    "for an axis the op always takes, or variadic=True for a "
+                    "tail of axes it may or may not be given."
+                )
+            continue  # wildcards may repeat: Axes('*', '*') is two axes
+        if not slot.name:
+            if slot.optional:
+                raise ValueError(
+                    "A lone '?' is not an axis. Mark the axis it belongs to, as 'c?'."
+                )
+            raise ValueError(f"Axis label {str(slot)!r} is not a non-empty string")
+        if any(char.isspace() or char == "," for char in slot.name):
+            raise ValueError(
+                f"Axis label {str(slot)!r} has a separator in it; pass one label "
+                "per argument, as Axes('z', 'y', 'x')."
+            )
+        name = canonical(slot.name)
+        if name in seen:
+            raise ValueError(f"Repeated axis {name!r} in {axes!r}")
+        seen.add(name)
+
 
 #: What happens to an input axis that no slot takes.
 ITERATE = "iterate"  # call the op once per position and stack the results
@@ -166,6 +239,7 @@ def build(
     if declared is None:
         raise ValueError(f"Parameter {param.name!r} declares no Axes")
 
+    check_axes(declared)
     actual = normalize_axes(axes)
     _check_actual(param, actual, shape)
     slots = declared.slots
@@ -254,7 +328,7 @@ def _default_mapping(
         if slot.name is None:
             continue
         for i, label in enumerate(actual):
-            if i not in taken and label and label == slot.name:
+            if i not in taken and label and label == canonical(slot.name):
                 mapping[s] = i
                 taken.add(i)
                 break
@@ -361,7 +435,7 @@ def _warnings(
         if slot.name is None or index is None:
             continue
         label = actual[index]
-        if label and label != slot.name:
+        if label and label != canonical(slot.name):
             notes.append(f"{slot.name} is being fed the {label} axis")
     return tuple(notes)
 

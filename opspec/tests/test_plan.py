@@ -17,6 +17,8 @@ from opspec.plan import (
     SELECT,
     AdaptationPlan,
     build,
+    canonical,
+    check_axes,
     normalize_axes,
     plan,
 )
@@ -53,6 +55,7 @@ def test_labels_may_be_any_string():
     axes = Axes("lifetime", "y", "x")
     assert axes.names == ("lifetime", "y", "x")
     assert axes.core == ("lifetime", "y", "x")
+    assert Axes("Row", "col").names == ("Row", "col")  # kept as written
 
 
 def test_a_lone_iterable_is_the_whole_sequence():
@@ -63,7 +66,7 @@ def test_a_lone_iterable_is_the_whole_sequence():
 def test_a_lone_stray_question_mark_is_refused():
     # list() splits the '?' loose from the axis it belongs to.
     with pytest.raises(ValueError, match="lone '\\?' is not an axis"):
-        Axes(list("yxc?"))
+        check_axes(Axes(list("yxc?")))
 
 
 def test_a_wildcard_slot_has_no_name_and_may_repeat():
@@ -77,7 +80,7 @@ def test_an_optional_wildcard_is_refused():
     # It could never be filled: wildcards match no name, and an optional slot
     # is filled by name and nothing else.
     with pytest.raises(ValueError, match="not a usable slot"):
-        Axes("y", "x", "*?")
+        check_axes(Axes("y", "x", "*?"))
 
 
 def test_variadic_takes_any_number_of_axes():
@@ -88,20 +91,21 @@ def test_variadic_takes_any_number_of_axes():
 
 def test_axes_rejects_nonsense():
     with pytest.raises(ValueError, match="Repeated axis"):
-        Axes("y", "x", "y")
+        check_axes(Axes("y", "x", "y"))
     with pytest.raises(ValueError, match="separator"):
-        Axes("z y x")
+        check_axes(Axes("z y x"))
     with pytest.raises(ValueError, match="not a non-empty string"):
-        Axes("y", "")
+        check_axes(Axes("y", ""))
 
 
 def test_synonyms_resolve_to_the_canonical_name():
     # scikit-image's spelling, ImageJ's, and Bio-Formats' upper case, all of
     # which a front end might report, all mean the same three axes.
-    assert Axes("pln", "row", "col") == Axes("z", "y", "x")
-    assert Axes("slice", "channel") == Axes("z", "c")
-    assert Axes(list("ZYX")) == Axes("z", "y", "x")
-    assert Axes("Frame", "Ch") == Axes("t", "c")
+    names = lambda axes: tuple(canonical(n) for n in axes.names)
+    assert names(Axes("pln", "row", "col")) == ("z", "y", "x")
+    assert names(Axes("slice", "channel")) == ("z", "c")
+    assert names(Axes(list("ZYX"))) == ("z", "y", "x")
+    assert names(Axes("Frame", "Ch")) == ("t", "c")
 
 
 def test_labels_without_a_canonical_equivalent_survive_untouched():
@@ -118,7 +122,7 @@ def test_labels_without_a_canonical_equivalent_survive_untouched():
 
 def test_a_synonym_collision_is_a_repeated_axis():
     with pytest.raises(ValueError, match="Repeated axis 'y'"):
-        Axes("y", "row")
+        check_axes(Axes("y", "row"))
 
 
 def test_axes_reach_the_spec():

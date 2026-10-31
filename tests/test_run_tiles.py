@@ -184,7 +184,8 @@ def test_the_runner_keeps_axes_it_may_not_split_whole():
     @op(
         tile="image",
         overlap=half_psf,
-        peak_memory=PeakMemory(10, "float64", pad=half_psf),
+        peak_memory=PeakMemory(10, "float64"),
+        pad=half_psf,
         split=("y", "x"),
     )
     def deconvolve(

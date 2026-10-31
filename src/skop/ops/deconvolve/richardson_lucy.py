@@ -38,7 +38,8 @@ _PAD = Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc")
     tile=("image", "mask"),
     split=("y", "x"),
     overlap=_OVERLAP,
-    peak_memory=PeakMemory(10, "float64", pad=_PAD),
+    peak_memory=PeakMemory(10, "float64"),
+    pad=_PAD,
     merge="blend",
 )
 def richardson_lucy(

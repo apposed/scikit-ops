@@ -41,7 +41,8 @@ _PAD = Overlap(param="psf", of="shape", scale=0.5, only_if="noncirc")
     # buffers are live at once by the code -- image, PSF, weights, estimate,
     # two complex OTFs, and an iteration's complex FFTs -- plus cuFFT's
     # workspace. Not yet measured.
-    peak_memory=PeakMemory(16, "float32", pad=_PAD, device="gpu"),
+    peak_memory=PeakMemory(16, "float32", device="gpu"),
+    pad=_PAD,
     merge="blend",
 )
 def richardson_lucy_cupy(

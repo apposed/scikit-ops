@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .op import PeakMemory
+from .resources import PeakMemory
 
 __all__ = ["Tile", "TilePlan", "parse_bytes", "plan_tiles"]
 

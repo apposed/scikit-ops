@@ -242,7 +242,8 @@ HALF_PSF = Overlap(param="psf", of="shape", scale=0.5)
     tile="image",
     split=("y", "x"),
     overlap=HALF_PSF,
-    peak_memory=PeakMemory(16, "float32", pad=HALF_PSF, device="gpu"),
+    peak_memory=PeakMemory(16, "float32", device="gpu"),
+    pad=HALF_PSF,  # the FFT pads by half the PSF too
     merge="blend",
 )
 def deconvolve(

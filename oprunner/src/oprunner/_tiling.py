@@ -163,15 +163,15 @@ class Tiler:
             overlap = self.overlap
         else:
             overlap = spec.overlap.resolve(values) if spec.overlap else 0
-        if peak.pad is None:
+        if spec.pad is None:
             pad = 0
-        elif peak.pad.param and values.get(peak.pad.param) is None and self.overlap:
+        elif spec.pad.param and values.get(spec.pad.param) is None and self.overlap:
             # Not made yet -- a workflow makes its PSF partway through -- so
             # assume the op pads by the overlap. The run plans again with the
             # real one.
             pad = self.overlap
         else:
-            pad = peak.pad.resolve(values)
+            pad = spec.pad.resolve(values)
         # The copies a tile makes on its way: read on the host, into shared
         # memory for the worker, and its result back the same way. They are
         # in RAM, so they count against a RAM budget only; a GPU op's budget

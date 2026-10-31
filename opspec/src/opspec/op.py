@@ -6,7 +6,6 @@ Standard library only, because every worker environment imports it.
 from __future__ import annotations
 
 import inspect
-import math
 import sys
 import types as _types
 from collections.abc import Callable
@@ -22,299 +21,75 @@ from typing import (
     get_type_hints,
 )
 
+# These live in axes.py, resources.py, tile.py and types.py, the vocabulary a
+# host can use without ops; they are imported here so `from opspec.op import
+# Role` and the like keep working.
+from .axes import Axes, Slot
+from .resources import PeakMemory
+from .tile import Overlap
+from .types import (  # noqa: F401 - for `from opspec.op import Out`
+    Direction,
+    Dtype,
+    Mut,
+    Out,
+    Role,
+)
 
-class Role(Enum):
-    """What a value *means* to a user or application.
+# Short names for the two directions, as op.py and its users compare them.
+OUT = Direction.OUT
+MUT = Direction.MUT
 
-    For example, images and labels are both arrays, but a host renders them
-    differently and a user interprets them differently.
 
-    Attach with ``Annotated[T, Role.<name>]``::
+def metadata_of(annotation: Any, cls: type) -> Any:
+    """The first metadata of class ``cls`` in an annotation, or ``None``::
 
-        @op
-        def threshold(
-            image: Annotated[np.ndarray, Role.image],
-        ) -> Annotated[np.ndarray, Role.labels]: ...
+        metadata_of(Annotated[np.ndarray, Role.image], Role)   # Role.image
 
-    A host reads ``Role.labels`` and shows the result as a segmentation, not
-    a grey image.
+    Looks inside ``X | None`` too: an output that may be missing still says
+    what it is when it is there.
     """
+    if get_origin(annotation) is Annotated:
+        for meta in annotation.__metadata__:
+            if isinstance(meta, cls):
+                return meta
+    for inner in get_args(annotation):  # e.g. the X in X | None
+        found = metadata_of(inner, cls)
+        if found is not None:
+            return found
+    return None
 
-    boxes = "boxes"
-    image = "image"
-    labels = "labels"
-    masks = "masks"
-    points = "points"
-    shapes = "shapes"
-    surface = "surface"
-    tracks = "tracks"
-    vectors = "vectors"
 
+def base_type_of(annotation: Any) -> Any:
+    """The type without its metadata or ``| None``::
 
-def _unwrap_optional(annotation: Any) -> Any:
-    """``X | None`` is X, for reading what X declares."""
-    if _is_union(get_origin(annotation)):
-        args = [a for a in get_args(annotation) if a is not type(None)]
-        if len(args) == 1:
-            return args[0]
+        base_type_of(ImageOf[np.ndarray])     # np.ndarray
+        base_type_of(MasksOf[Array] | None)   # Array
+        base_type_of(float)                   # float
+
+    For an array parameter, this is its array type.
+    """
+    if get_origin(annotation) is Annotated:
+        return annotation.__origin__  # the type in front of the metadata
+    parts = [a for a in get_args(annotation) if a is not type(None)]
+    if type(None) in get_args(annotation) and len(parts) == 1:
+        return base_type_of(parts[0])  # X | None: look at X
     return annotation
 
 
 def role_of(annotation: Any) -> Role | None:
-    """Read the role off an annotation, or ``None`` if it declares no role.
-
-    Read through ``X | None`` too: an output that may be missing still says
-    what it is when it is there.
-    """
-    annotation = _unwrap_optional(annotation)
-    if get_origin(annotation) is Annotated:
-        for meta in get_args(annotation)[1:]:
-            if isinstance(meta, Role):
-                return meta
-    return None
-
-
-#: Axis names a viewer knows how to display. Any other string is still a
-#: valid axis label.
-CANONICAL = ("x", "y", "z", "c", "t")
-
-#: Synonyms for the canonical names, from scikit-image, ImageJ, Bio-Formats,
-#: CZI and OME-NGFF: ``row`` is ``y``. Other labels (``lifetime``,
-#: ``batch``) pass through unchanged.
-ALIASES = {
-    "col": "x",
-    "cols": "x",
-    "column": "x",
-    "columns": "x",
-    "row": "y",
-    "rows": "y",
-    "pln": "z",
-    "plane": "z",
-    "planes": "z",
-    "slice": "z",
-    "slices": "z",
-    "ch": "c",
-    "chan": "c",
-    "channel": "c",
-    "channels": "c",
-    "frame": "t",
-    "frames": "t",
-    "time": "t",
-    "timepoint": "t",
-    "timepoints": "t",
-}
-
-
-def canonical(label: str) -> str:
-    """An axis label, lowercased and resolved: ``ROW`` -> ``y``.
-
-    An unknown label is returned lowercased: ``"Lifetime"`` -> ``"lifetime"``.
-    """
-    folded = label.strip().casefold()
-    return ALIASES.get(folded, folded)
-
-
-WILDCARD = "*"
-
-
-@dataclass(frozen=True)
-class Slot:
-    """One axis an op takes. ``name`` is a hint, not a requirement; None is
-    a wildcard, any axis.
-    """
-
-    name: str | None
-    optional: bool = False
-
-    def __str__(self) -> str:
-        return (self.name or WILDCARD) + ("?" if self.optional else "")
-
-
-@dataclass(frozen=True, init=False)
-class Axes:
-    """How many axes an op takes, and what it calls them::
-
-        Axes("y", "x")        # two axes, named y and x
-        Axes(list("zyx"))     # three
-        Axes("y", "x", "c?")  # two, plus a channel axis if there is one
-        Axes("*", "*")        # two axes, no opinion which
-        Axes(variadic=True)   # any number
-
-    - Names are hints: a mismatch is a warning in the plan, not an error.
-    - The number of axes is a rule: it is what the op's indexing needs.
-    - ``variadic`` means the op handles extra axes itself, so they are not
-      looped over.
-    - Ignored when the op is called directly.
-    """
-
-    slots: tuple[Slot, ...]
-    variadic: bool
-
-    def __init__(self, *names: Any, variadic: bool = False) -> None:
-        # frozen blocks normal assignment, so set fields as dataclass does.
-        # Slots are stored parsed, so Axes("z", "y", "x") equals
-        # Axes("pln", "row", "col").
-        if len(names) == 1 and not isinstance(names[0], str):
-            # A lone non-string is the sequence itself: Axes(list("zyx")).
-            names = tuple(names[0])
-        object.__setattr__(self, "slots", _parse_slots(names))
-        object.__setattr__(self, "variadic", variadic)
-
-    @property
-    def names(self) -> tuple[str, ...]:
-        """Each slot's name; ``"*"`` for a wildcard."""
-        return tuple(str(slot).removesuffix("?") for slot in self.slots)
-
-    @property
-    def optional(self) -> frozenset[str]:
-        """Names of the slots that need not be filled."""
-        return frozenset(
-            slot.name for slot in self.slots if slot.optional and slot.name
-        )
-
-    @property
-    def core(self) -> tuple[str, ...]:
-        """Names of the slots that must be filled."""
-        return tuple(str(slot) for slot in self.slots if not slot.optional)
-
-    def __repr__(self) -> str:
-        shown = ", ".join(repr(str(slot)) for slot in self.slots)
-        if self.variadic:
-            shown = f"{shown}, variadic=True" if shown else "variadic=True"
-        return f"Axes({shown})"
-
-
-def _parse_slots(names: tuple[Any, ...]) -> tuple[Slot, ...]:
-    """Check slot labels, resolve their names and split off the '?'."""
-    slots: list[Slot] = []
-    seen: set[str] = set()
-    for label in names:
-        if label == "?":
-            raise ValueError(
-                "A lone '?' is not an axis. Mark the axis it belongs to, as 'c?'."
-            )
-        if not isinstance(label, str) or not label.strip("?"):
-            raise ValueError(f"Axis label {label!r} is not a non-empty string")
-        if any(char.isspace() or char == "," for char in label.strip()):
-            raise ValueError(
-                f"Axis label {label!r} has a separator in it; pass one label "
-                "per argument, as Axes('z', 'y', 'x')."
-            )
-        optional = label.endswith("?")
-        text = label.removesuffix("?")
-        if text == WILDCARD:
-            if optional:
-                # An optional slot is filled only by name, and a wildcard has
-                # none, so '*?' could never be filled.
-                raise ValueError(
-                    "'*?' is not a usable slot: a wildcard has no name to match "
-                    "on, and an optional slot is filled only by name. Use '*' "
-                    "for an axis the op always takes, or variadic=True for a "
-                    "tail of axes it may or may not be given."
-                )
-            # Wildcards may repeat: Axes('*', '*') is two axes of any kind.
-            slots.append(Slot(None, False))
-            continue
-        name = canonical(text)
-        if name in seen:
-            raise ValueError(f"Repeated axis {name!r} in {names}")
-        seen.add(name)
-        slots.append(Slot(name, optional))
-    return tuple(slots)
-
-
-def axes_of(annotation: Any) -> Axes | None:
-    """Read the ``Axes`` off an annotation, or ``None``.
-
-    Reads through ``X | None``, as ``role_of`` does.
-    """
-    annotation = _unwrap_optional(annotation)
-    if get_origin(annotation) is Annotated:
-        for meta in get_args(annotation)[1:]:
-            if isinstance(meta, Axes):
-                return meta
-    return None
-
-
-# -- dtypes: what kind of number an array holds ---------------------------
-
-# numpy's names, listed here so opspec doesn't have to import numpy.
-DTYPE_NAMES = frozenset(
-    {
-        "bool",
-        "int8",
-        "int16",
-        "int32",
-        "int64",
-        "uint8",
-        "uint16",
-        "uint32",
-        "uint64",
-        "float16",
-        "float32",
-        "float64",
-        "complex64",
-        "complex128",
-    }
-)
-
-
-@dataclass(frozen=True, init=False)
-class Dtype:
-    """The dtypes an op takes for an array, by numpy name::
-
-        Dtype("uint8", "uint16")  # either of these
-        Dtype("float32")          # only float32
-
-    Left out, any dtype. opspec only declares; converting another dtype is
-    the runner's job. Ignored when the op is called directly.
-    """
-
-    names: tuple[str, ...]
-
-    def __init__(self, *names: str) -> None:
-        if not names:
-            raise ValueError("Dtype needs at least one dtype, as Dtype('uint8')")
-        unknown = [name for name in names if name not in DTYPE_NAMES]
-        if unknown:
-            raise ValueError(
-                f"Unknown dtype {unknown[0]!r}; use numpy's names, such as "
-                "'uint8', 'uint16' or 'float32'"
-            )
-        object.__setattr__(self, "names", tuple(names))
-
-    def __repr__(self) -> str:
-        return f"Dtype({', '.join(repr(name) for name in self.names)})"
+    """Read the role off an annotation, or ``None`` if it declares no role."""
+    return metadata_of(annotation, Role)
 
 
 def dtype_of(annotation: Any) -> Dtype | None:
-    """Read the ``Dtype`` off an annotation, or ``None``.
-
-    Reads through ``X | None``, as ``axes_of`` does.
-    """
-    annotation = _unwrap_optional(annotation)
-    if get_origin(annotation) is Annotated:
-        for meta in get_args(annotation)[1:]:
-            if isinstance(meta, Dtype):
-                return meta
-    return None
+    """Read the ``Dtype`` off an annotation, or ``None``."""
+    return metadata_of(annotation, Dtype)
 
 
-# -- directions: who allocates the arrays --------------------------------
+def axes_of(annotation: Any) -> Axes | None:
+    """Read the ``Axes`` off an annotation, or ``None``."""
+    return metadata_of(annotation, Axes)
 
-
-class _Direction:
-    """Marks a parameter as an output buffer (``Out``) or mutated (``Mut``)."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def __repr__(self) -> str:
-        return f"<opspec.{self.name}>"
-
-
-OUT = _Direction("Out")
-MUT = _Direction("Mut")
 
 # Op computation forms, in the SciJava Ops sense.
 FUNCTION = "function"  # returns a new output
@@ -322,36 +97,9 @@ COMPUTER = "computer"  # caller supplies the output buffer, op fills it
 INPLACE = "inplace"  # op mutates one of its inputs
 
 
-def _annotate(item: Any, marker: _Direction) -> Any:
-    parts = item if isinstance(item, tuple) else (item,)
-    return Annotated[(parts[0], marker, *parts[1:])]
-
-
-class Out:
-    """Mark a parameter as an output buffer the caller allocates.
-
-    ``labels: Out[np.ndarray]`` declares a computer-form op. A host doesn't
-    ask the user for the buffer; it allocates it and reads it back.
-    """
-
-    def __class_getitem__(cls, item: Any) -> Any:
-        return _annotate(item, OUT)
-
-
-class Mut:
-    """Mark a parameter as mutated in place, declaring an inplace-form op."""
-
-    def __class_getitem__(cls, item: Any) -> Any:
-        return _annotate(item, MUT)
-
-
-def direction_of(annotation: Any) -> _Direction | None:
+def direction_of(annotation: Any) -> Direction | None:
     """Read the direction off an annotation, or ``None`` for an input."""
-    if get_origin(annotation) is Annotated:
-        for meta in get_args(annotation)[1:]:
-            if isinstance(meta, _Direction):
-                return meta
-    return None
+    return metadata_of(annotation, Direction)
 
 
 # -- workflows: parameters that hold other ops --------------------------
@@ -441,179 +189,12 @@ class ParamsFor:
 
 def choices_of(annotation: Any) -> Choices | None:
     """Read a ``Choices`` off an annotation, or ``None``."""
-    if get_origin(annotation) is Annotated:
-        for meta in get_args(annotation)[1:]:
-            if isinstance(meta, Choices):
-                return meta
-    return None
+    return metadata_of(annotation, Choices)
 
 
 def params_for_of(annotation: Any) -> ParamsFor | None:
     """Read a ``ParamsFor`` off an annotation, or ``None``."""
-    if get_origin(annotation) is Annotated:
-        for meta in get_args(annotation)[1:]:
-            if isinstance(meta, ParamsFor):
-                return meta
-    return None
-
-
-# -- tiling: hints for cutting one call into several -----------------------
-#
-# All optional, and hints, not rules: a runner uses them for its defaults,
-# and a caller can override any of them. See scikit-ops'
-# docs/design/0017-memory-and-tiled-processing/tiling.md.
-
-#: Bytes per element, by dtype name. opspec cannot ask numpy.
-_ITEMSIZE = {
-    "bool": 1,
-    "int8": 1,
-    "uint8": 1,
-    "int16": 2,
-    "uint16": 2,
-    "float16": 2,
-    "int32": 4,
-    "uint32": 4,
-    "float32": 4,
-    "int64": 8,
-    "uint64": 8,
-    "float64": 8,
-    "complex64": 8,
-    "complex128": 16,
-}
-
-
-def _dtype_name(dtype: Any) -> str:
-    """``"float32"``, from a name, a numpy dtype or a numpy scalar type."""
-    name = getattr(dtype, "name", None) if not isinstance(dtype, str) else dtype
-    if not isinstance(name, str):
-        name = getattr(dtype, "__name__", str(dtype))
-    if name not in _ITEMSIZE:
-        raise ValueError(f"Unknown dtype for memory accounting: {dtype!r}")
-    return name
-
-
-@dataclass(frozen=True)
-class PeakMemory:
-    """An op's peak memory, as a multiple of its input's size::
-
-        PeakMemory(scale=2, dtype="float32")   # two float32 copies at once
-        PeakMemory(10, "float64", pad=Overlap(param="psf", of="shape", scale=0.5))
-
-    - ``dtype``: what the op's buffers hold; None means the input's dtype.
-    - ``fixed``: bytes that don't grow with the input, such as a model's
-      weights.
-    - ``pad``: how far the op pads its input on each side, as an
-      ``Overlap``. The multiple counts the padded size. An FFT op pads by
-      part of its kernel, as in the second example.
-    - ``device``: ``"cpu"`` (RAM) or ``"gpu"`` (GPU memory). The budget is
-      taken from that device.
-    """
-
-    scale: float
-    dtype: str | None = None
-    fixed: int = 0
-    pad: Overlap | None = None
-    device: str = "cpu"
-
-    def __post_init__(self) -> None:
-        if self.dtype is not None:
-            object.__setattr__(self, "dtype", _dtype_name(self.dtype))
-        if self.device not in ("cpu", "gpu"):
-            raise ValueError(f"PeakMemory device={self.device!r}: 'cpu' or 'gpu'")
-
-    def bytes_for(self, n_elements: int, input_dtype: Any = "uint8") -> int:
-        """Peak bytes for an input of *n_elements* elements."""
-        itemsize = _ITEMSIZE[self.dtype or _dtype_name(input_dtype)]
-        return math.ceil(self.scale * n_elements * itemsize) + self.fixed
-
-    def to_dict(self) -> dict:
-        data = {"scale": self.scale, "dtype": self.dtype, "fixed": self.fixed}
-        if self.pad is not None:
-            data["pad"] = self.pad.to_dict()
-        if self.device != "cpu":
-            data["device"] = self.device
-        return data
-
-    @classmethod
-    def from_dict(cls, data: dict) -> PeakMemory:
-        pad = Overlap.from_dict(data["pad"]) if data.get("pad") else None
-        return cls(
-            data["scale"],
-            data.get("dtype"),
-            data.get("fixed", 0),
-            pad,
-            data.get("device", "cpu"),
-        )
-
-
-@dataclass(frozen=True)
-class Overlap:
-    """How far a tile reads past its core on each side, in pixels::
-
-        Overlap(10)                                   # always 10 pixels
-        Overlap(param="sigma", scale=4)               # 4 x sigma
-        Overlap(param="psf", of="shape", scale=0.5)   # half the PSF, per axis
-        Overlap(param="psf", of="shape", scale=0.5,
-                only_if="noncirc", otherwise=10)      # 10 when noncirc is off
-
-    A formula is data, not code, so any front end can evaluate it.
-    ``pixels`` is added to it. With ``only_if``, the formula applies when that
-    parameter is true, and ``otherwise`` pixels when it is false.
-
-    With ``of="shape"`` the parameter is an array, and the overlap is per
-    axis, from its shape, rounded down: half a kernel of 31 is 15, exactly
-    how far it reaches. Otherwise the parameter is a number, or one per axis
-    (the largest is used), and the overlap is rounded up.
-    """
-
-    pixels: int = 0
-    param: str | None = None
-    scale: float = 1.0
-    of: str | None = None
-    only_if: str | None = None
-    otherwise: int = 0
-
-    def resolve(self, values: dict) -> int | tuple[int, ...]:
-        """The overlap for a call with these argument *values*.
-
-        One number, the same on every axis, or one per axis for ``of="shape"``.
-        """
-        if self.only_if is not None and not values.get(self.only_if):
-            return self.otherwise
-        if self.param is None:
-            return self.pixels
-        value = values.get(self.param)
-        if value is None:
-            raise ValueError(f"Overlap needs {self.param}, and the call has none")
-        if self.of == "shape":
-            return tuple(self.pixels + math.floor(self.scale * n) for n in value.shape)
-        if isinstance(value, (list, tuple)):
-            value = max(value)
-        return self.pixels + math.ceil(self.scale * float(value))
-
-    def to_dict(self) -> dict:
-        data = {"pixels": self.pixels, "param": self.param, "scale": self.scale}
-        if self.of is not None:
-            data["of"] = self.of
-        if self.only_if is not None:
-            data["only_if"] = self.only_if
-            data["otherwise"] = self.otherwise
-        return data
-
-    @classmethod
-    def from_dict(cls, data: dict) -> Overlap:
-        return cls(
-            data.get("pixels", 0),
-            data.get("param"),
-            data.get("scale", 1.0),
-            data.get("of"),
-            data.get("only_if"),
-            data.get("otherwise", 0),
-        )
-
-    def __post_init__(self) -> None:
-        if self.of not in (None, "shape"):
-            raise ValueError(f"Overlap of={self.of!r}: only 'shape' is known")
+    return metadata_of(annotation, ParamsFor)
 
 
 @dataclass(frozen=True)
@@ -624,6 +205,7 @@ class _OpConfig:
     tile: tuple[str, ...] = ()
     overlap: Overlap | None = None
     peak_memory: PeakMemory | None = None
+    pad: Overlap | None = None
     merge: str | None = None
     split: tuple[str, ...] = ()
 
@@ -637,6 +219,7 @@ def op(
     tile: str | tuple[str, ...] | None = None,
     overlap: Overlap | int | None = None,
     peak_memory: PeakMemory | None = None,
+    pad: Overlap | int | None = None,
     merge: str | None = None,
     split: tuple[str, ...] | None = None,
 ) -> Callable:
@@ -665,6 +248,9 @@ def op(
             number of pixels.
         peak_memory: The op's peak memory, as a ``PeakMemory``. A runner
             sizes tiles from it.
+        pad: How far the op pads its input on each side, as an ``Overlap``
+            or a number of pixels. ``peak_memory`` then counts the padded
+            size. An FFT op pads by part of its kernel.
         merge: How tiles are put back together. ``"crop"`` keeps each
             tile's core and drops the overlap. ``"blend"`` fades each tile
             out across the overlap, so neighbours mix where they meet.
@@ -681,6 +267,7 @@ def op(
             tile=(tile,) if isinstance(tile, str) else tuple(tile or ()),
             overlap=Overlap(overlap) if isinstance(overlap, int) else overlap,
             peak_memory=peak_memory,
+            pad=Overlap(pad) if isinstance(pad, int) else pad,
             merge=merge,
             split=tuple(split or ()),
         )
@@ -878,6 +465,43 @@ def _axes_from_dict(data: dict) -> Axes:
     return result
 
 
+def _overlap_dict(overlap: Overlap) -> dict:
+    data = {"pixels": overlap.pixels, "param": overlap.param, "scale": overlap.scale}
+    if overlap.of is not None:
+        data["of"] = overlap.of
+    if overlap.only_if is not None:
+        data["only_if"] = overlap.only_if
+        data["otherwise"] = overlap.otherwise
+    return data
+
+
+def _overlap_from_dict(data: dict) -> Overlap:
+    return Overlap(
+        data.get("pixels", 0),
+        data.get("param"),
+        data.get("scale", 1.0),
+        data.get("of"),
+        data.get("only_if"),
+        data.get("otherwise", 0),
+    )
+
+
+def _peak_memory_dict(peak: PeakMemory) -> dict:
+    data = {"scale": peak.scale, "dtype": peak.dtype, "fixed": peak.fixed}
+    if peak.device != "cpu":  # a CPU peak's wire form is as before devices
+        data["device"] = peak.device
+    return data
+
+
+def _peak_memory_from_dict(data: dict) -> PeakMemory:
+    return PeakMemory(
+        data["scale"],
+        data.get("dtype"),
+        data.get("fixed", 0),
+        data.get("device", "cpu"),
+    )
+
+
 @dataclass(frozen=True)
 class ParamSpec:
     """One parameter of an op, as declared."""
@@ -892,7 +516,7 @@ class ParamSpec:
     ui: dict = field(default_factory=dict)
     #: None for an input, OUT for a caller-allocated buffer, MUT for one the
     #: op modifies in place.
-    direction: _Direction | None = None
+    direction: Direction | None = None
     #: The ops this parameter may be filled with, if it is a chooser.
     choices: Choices | None = None
     #: Which chooser's arguments this parameter carries, if any.
@@ -919,7 +543,7 @@ class ParamSpec:
         if self.ui:
             data["ui"] = dict(self.ui)
         if self.direction is not None:
-            data["direction"] = self.direction.name
+            data["direction"] = self.direction.value
         if self.choices is not None:
             # IDs, not functions: another process can't import the functions.
             data["choices"] = [
@@ -951,7 +575,7 @@ class ParamSpec:
             axes=_axes_from_dict(data["axes"]) if data.get("axes") else None,
             dtype=Dtype(*data["dtype"]) if data.get("dtype") else None,
             ui=dict(data.get("ui", {})),
-            direction={"Out": OUT, "Mut": MUT}.get(data.get("direction", "")),
+            direction=Direction(data["direction"]) if data.get("direction") else None,
             choices=_choices_from_dict(data.get("choices")),
             params_for=(
                 ParamsFor(
@@ -1103,6 +727,7 @@ class OpSpec:
     tile: tuple[str, ...] = ()
     overlap: Overlap | None = None
     peak_memory: PeakMemory | None = None
+    pad: Overlap | None = None
     merge: str | None = None
     split: tuple[str, ...] = ()
 
@@ -1161,8 +786,13 @@ class OpSpec:
             "doc": self.doc,
             # Tiling hints only when declared, so older readers see no change.
             **({"tile": list(self.tile)} if self.tile else {}),
-            **({"overlap": self.overlap.to_dict()} if self.overlap else {}),
-            **({"peak_memory": self.peak_memory.to_dict()} if self.peak_memory else {}),
+            **({"overlap": _overlap_dict(self.overlap)} if self.overlap else {}),
+            **(
+                {"peak_memory": _peak_memory_dict(self.peak_memory)}
+                if self.peak_memory
+                else {}
+            ),
+            **({"pad": _overlap_dict(self.pad)} if self.pad else {}),
             **({"merge": self.merge} if self.merge else {}),
             **({"split": list(self.split)} if self.split else {}),
         }
@@ -1189,12 +819,15 @@ class OpSpec:
             main_thread=bool(data.get("main_thread", False)),
             exclusive=bool(data.get("exclusive", False)),
             tile=tuple(data.get("tile", ())),
-            overlap=Overlap.from_dict(data["overlap"]) if data.get("overlap") else None,
+            overlap=_overlap_from_dict(data["overlap"])
+            if data.get("overlap")
+            else None,
             peak_memory=(
-                PeakMemory.from_dict(data["peak_memory"])
+                _peak_memory_from_dict(data["peak_memory"])
                 if data.get("peak_memory")
                 else None
             ),
+            pad=_overlap_from_dict(data["pad"]) if data.get("pad") else None,
             merge=data.get("merge"),
             split=tuple(data.get("split", ())),
             _outputs=tuple(OutputSpec.from_dict(o) for o in data.get("outputs", ())),
@@ -1242,8 +875,7 @@ class OpSpec:
 
         names = {p.name for p in params}
         unknown = [name for name in config.tile if name not in names]
-        pad = config.peak_memory.pad if config.peak_memory else None
-        for formula in (config.overlap, pad):
+        for formula in (config.overlap, config.pad):
             for name in (formula.param, formula.only_if) if formula else ():
                 if name and name not in names:
                     unknown.append(name)
@@ -1252,10 +884,18 @@ class OpSpec:
                 f"Op {fn.__qualname__}'s tiling hints name no such parameter: "
                 f"{', '.join(unknown)}"
             )
+        # Imported here because plan.py imports this module.
+        from .plan import canonical, check_axes
+
+        for p in params:
+            if p.axes is not None:
+                check_axes(p.axes)
+
         if config.split and config.tile:
             tiled = next(p for p in params if p.name == config.tile[0])
             named = tiled.axes.names if tiled.axes and not tiled.axes.variadic else ()
-            stray = [n for n in config.split if named and n not in named]
+            known = {canonical(n) for n in named}
+            stray = [n for n in config.split if named and canonical(n) not in known]
             if stray:
                 raise TypeError(
                     f"Op {fn.__qualname__} splits along {', '.join(stray)}, which "
@@ -1303,6 +943,7 @@ class OpSpec:
             tile=config.tile,
             overlap=config.overlap,
             peak_memory=config.peak_memory,
+            pad=config.pad,
             merge=config.merge,
             split=config.split,
             _outputs=outputs,
