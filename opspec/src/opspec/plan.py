@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .axes import Axes, Slot
-from .op import OpSpec, ParamSpec
+from .describe import OpSpec, ParamSpec
 
 #: The standard axis names. Other names are allowed too.
 CANONICAL = ("x", "y", "z", "c", "t")
