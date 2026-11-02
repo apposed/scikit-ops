@@ -13,9 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Any, Protocol, TypeVar, runtime_checkable
 
-# The public names of this module, defined below: the roles, the Array
-# protocol, one alias per role for op parameters (e.g. ImageOf[np.ndarray]
-# or LabelsOf[Array]), dtypes, and Out/Mut for buffers.
+# Public names of this module, defined below.
 __all__ = [
     "DTYPE_NAMES",
     "Array",
