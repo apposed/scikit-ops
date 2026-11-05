@@ -1,17 +1,49 @@
 # Writing ops
 
-An op is a plain Python function.
+An op is a plain Python function with an `@op` decorator.
 
 ## The decorator
 
-```python
-from opspec.op import Overlap, PeakMemory, op
+`@op` marks a function as an op. It doesn't change the function, so calling
+it directly still works. The op decorator arguments say which environment the op runs in, and optionally
+whether it needs tiling. 
 
-@op                                  # runs in host environment
-@op(env="skimage")                   # runs in a worker environment
-@op(env="pytorch", exclusive=True)   # runs in it's own worker environment 
-@op(env="napari", main_thread=True)  # needs the main thread
+### Op definition and environment specification
+
+If an op does not define the 'env' ... it runs in the host.
+
+```python
+from opspec.op import op
+
+@op                     # runs in the host environment
+def invert(image): ...
 ```
+
+With an `env`, it runs in a worker for that environment:
+
+```python
+@op(env="skimage")      # runs in a worker environment
+def smooth(image, sigma=2.0): ...
+```
+
+- `env`: the environment (the installed packages). Ops with the same `env`
+  share one worker.
+
+`env="name"` refers to `envs/<name>/pixi.toml` next to the op's package. The
+runner builds it with pixi on first use. For a hypothetical
+project called my-ops:
+
+```
+my-ops/
+  envs/numpy_1x/pixi.toml       # ordinary pixi file: numpy<2, scikit-ops (pinned), ...
+  src/my_ops/simulation.py      # @op(env="numpy_1x")
+```
+
+Every environment needs the runner's worker side: for now, the `scikit-ops`
+package (pinned), until opspec and oprunner are published on their own. Only
+pixi is supported so far.
+
+### Tiling
 
 Tiling hints are optional. The runner can use this information to tile an
 input that the op cannot process in memory. Note that it is not just a matter
@@ -26,6 +58,8 @@ Tiling uses the following:
   function of a parameter
 - `peak_memory`: how many times the input size the op needs for computation
   buffers
+- `pad`: how far the op pads its input on each side (an FFT pads by part of
+  its kernel); `peak_memory` then counts the padded size
 - `merge`: how the tiles are put back together, `"crop"` (keep each tile's
   core, drop the overlap) or `"blend"` (neighbours mixed)
 
