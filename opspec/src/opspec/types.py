@@ -1,10 +1,10 @@
-"""Roles, the Array protocol, and role aliases for op parameters.
+"""This file contains Roles, the Array protocol, and role aliases for op parameters.
 
-A role is the meaning of an array: an image, labels, boxes. An op parameter
-states its role and its array type in one annotation, for example
+A role is the meaning of an array: ie an image, a label, a box, a shape etc.
+
+An op parameter states its role and its array type in one annotation, for example
 ``ImageOf[np.ndarray]`` or ``LabelsOf[Array]``.
 
-Standard library only, because every worker environment imports it.
 """
 
 from __future__ import annotations
@@ -35,20 +35,22 @@ __all__ = [
 
 
 class Role(Enum):
-    """What a value *means* to a user or application.
+    """A role describes a value's meaning to a user or application.
 
-    For example, images and labels are both arrays, but a host renders them
+    For example, images and labels are both arrays, but a host application like Napari renders them
     differently and a user interprets them differently.
 
-    Attach with ``Annotated[T, Role.<name>]``, or use the aliases below::
+    We can use a role when annotating a type hint ie ``Annotated[T, Role.<name>]``
+
+    For example in an op that takes an numpy array that represents an image and returns a numpy array that represents labels, we can write:
 
         @op
         def threshold(
             image: Annotated[np.ndarray, Role.image],
         ) -> Annotated[np.ndarray, Role.labels]: ...
 
-    A host reads ``Role.labels`` and shows the result as a segmentation, not
-    a grey image.
+    A host reads ``Role.labels`` and can show the result as a segmentation, not
+    a grey scale image.
     """
 
     boxes = "boxes"
@@ -65,15 +67,22 @@ class Role(Enum):
 # The Array protocol (could be replaced with a community protocol if one exists).
 @runtime_checkable
 class Array(Protocol):
-    """Anything array-shaped, for an op that does not need numpy.
+    """Anything array-shaped,
 
-    A subset of the Python array API standard. numpy, cupy, dask, zarr and
+    Use for an op that does not use  specific functionality from numpy/cupy etc.
+
+    (If an op does use a specific array library, it should take that type directly, e.g. ``np.ndarray`` or ``cp.ndarray``.)
+
+    Array subset of the Python array API standard. numpy, cupy, dask, zarr and
     xarray all satisfy it.
+
+    So we can use numpy for an Array, but not Array for a numpy array.
 
     We purposely don't support ``__array__``, because converting an Array to
     numpy is the runner's job.
 
-    This is what an op takes. A host may keep its own protocol, as napari
+
+    This is what an op uses. A host may have its own protocol, as napari
     does with ``LayerDataProtocol``.
 
     Todo: consider reusing a community array protocol.
@@ -94,6 +103,14 @@ class Array(Protocol):
     def __getitem__(self, key: Any) -> Any: ...
 
 
+# Below we define several templated alias shortcuts so ops can succinctly declare their parameters. For example, instead of writing
+# ```
+# def op(image: Annotated[np.ndarray, Role.image]) -> Annotated[np.ndarray, Role.labels]:
+# ```
+# an op can write:
+# ```
+# def op(image: ImageOf[np.ndarray]) -> LabelsOf[np.ndarray]:
+# ```
 # The aliases take the array type as a parameter, so an op can say which
 # array types it accepts:
 #
@@ -133,9 +150,11 @@ TracksOf = Annotated[A, Role.tracks]
 VectorsOf = Annotated[A, Role.vectors]
 
 
-# -- dtypes: what kind of number an array holds ---------------------------
+# -- dtypes: the number type of an array ---------------------------
 
-# numpy's names, listed here so opspec doesn't have to import numpy.
+# The dtype names Dtype accepts: numpy's, which the array API standard and
+# most array libraries also use. Listed here because opspec doesn't depend
+# on numpy.
 DTYPE_NAMES = frozenset(
     {
         "bool",
@@ -158,13 +177,11 @@ DTYPE_NAMES = frozenset(
 
 @dataclass(frozen=True, init=False)
 class Dtype:
-    """The dtypes an op takes for an array, by numpy name::
+    """dtypes for an op
 
-        Dtype("uint8", "uint16")  # either of these
-        Dtype("float32")          # only float32
+    Dtype("uint8", "uint16")  # either of these
+    Dtype("float32")          # only float32
 
-    Left out, any dtype. opspec only declares; converting another dtype is
-    the runner's job. Ignored when the op is called directly.
     """
 
     names: tuple[str, ...]
@@ -184,12 +201,11 @@ class Dtype:
         return f"Dtype({', '.join(repr(name) for name in self.names)})"
 
 
-# -- directions: who allocates the arrays --------------------------------
-
-
+# -- directions: defines OUT and MUT for input/outputs that the caller needs to allocate--------
 class Direction(Enum):
-    """Who allocates a parameter's array: for ``OUT`` the caller allocates it
-    and the op fills it; ``MUT`` is an input the op changes in place."""
+    """``OUT`` the caller allocates itand the op fills it;
+    ``MUT`` is an input the op changes in place.
+    """
 
     OUT = "Out"
     MUT = "Mut"

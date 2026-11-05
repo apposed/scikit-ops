@@ -27,7 +27,7 @@ class Slot:
 
 @dataclass(frozen=True, init=False)
 class Axes:
-    """How many axes an op takes, and what it calls them::
+    """Defines how many axis an op takes and axis names::
 
         Axes("y", "x")        # two axes, named y and x
         Axes(list("zyx"))     # three
@@ -39,7 +39,7 @@ class Axes:
     - The number of axes is a rule: it is what the op's indexing needs.
     - ``variadic`` means the op handles extra axes itself, so they are not
       looped over.
-    - Ignored when the op is called directly.
+    - Needs to be read and enforced by the caller to be useful.
     """
 
     slots: tuple[Slot, ...]

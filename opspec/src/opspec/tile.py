@@ -1,8 +1,10 @@
-"""Tiling hints: which inputs may be cut into tiles, and how.
+"""Tiling hints:
 
-Hints, not rules: whoever does the tiling uses them for its defaults, and a
-caller can override any of them. The tiling itself is not here; opspec's is
-in tiling.py. Design: scikit-ops'
+helps annotate which inputs need to be tiled by the runner, and how.
+
+Note: This doesn't indicate the op will tile its inputs; it only hints to the runner that it may have to do so.
+
+The tiling itself is not here; opspec's is in tiling.py. Design: scikit-ops'
 docs/design/0017-memory-and-tiled-processing/tiling.md.
 
 Standard library only, so any project can use it without extra dependencies.
@@ -16,7 +18,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Overlap:
-    """How far a tile reads past its core on each side, in pixels::
+    """Hints as to how far a tile needs to go past the edge on each side, in pixels::
 
         Overlap(10)                                   # always 10 pixels
         Overlap(param="sigma", scale=4)               # 4 x sigma
