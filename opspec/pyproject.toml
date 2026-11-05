@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "opspec"
 version = "0.1.0.dev0"
 description = "A spec for image-processing ops and runners, with no dependencies."
-license = "BSD-3-Clause"
+license = "BSD-2-Clause"
 authors = [{name = "opspec developers"}]
 readme = "README.md"
 classifiers = [

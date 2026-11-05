@@ -20,8 +20,8 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
-    # progress, for downloads. A git URL: opspec is not on PyPI yet.
-    "opspec @ git+https://github.com/apposed/scikit-ops#subdirectory=opspec",
+    # progress, for downloads.
+    "opspec>=0.1.0.dev0",
 ]
 
 [dependency-groups]

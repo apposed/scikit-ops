@@ -22,8 +22,7 @@ dependencies = [
     "appose>=0.12",
     "numpy",
     "psutil",
-    # A git URL: opspec is not on PyPI yet.
-    "opspec @ git+https://github.com/apposed/scikit-ops#subdirectory=opspec",
+    "opspec>=0.1.0.dev0",
 ]
 
 [dependency-groups]
