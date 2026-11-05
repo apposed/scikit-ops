@@ -14,8 +14,10 @@ WILDCARD = "*"
 
 @dataclass(frozen=True)
 class Slot:
-    """One axis an op takes. ``name`` is a hint, not a requirement; None is
-    a wildcard, any axis.
+    """Holds info parsed from an axis string.
+
+    For example "c?" becomes a Slot with name = c and optional = True, and
+    "*" a Slot with no name (None).
     """
 
     name: str | None
@@ -27,18 +29,22 @@ class Slot:
 
 @dataclass(frozen=True, init=False)
 class Axes:
-    """Defines how many axis an op takes and axis names::
+    """Defines how many axes an op takes and axis names::
 
         Axes("y", "x")        # two axes, named y and x
+        Axes("z?", "y", "x")  # axes for a spatial operation that can be 3D or 2D (z is optional)
         Axes(list("zyx"))     # three
         Axes("y", "x", "c?")  # two, plus a channel axis if there is one
         Axes("*", "*")        # two axes, no opinion which
         Axes(variadic=True)   # any number
+        Axes("y", "x", variadic=True)   # y and x last, plus any other axes in front
 
-    - Names are hints: a mismatch is a warning in the plan, not an error.
-    - The number of axes is a rule: it is what the op's indexing needs.
+    - A caller should treat the names as hints: match by name where it can,
+      and treat a mismatch as a warning, not an error.
+    - A caller should enforce the number of axes: it is what the op's
+      indexing needs.
     - ``variadic`` means the op handles extra axes itself, so they are not
-      looped over.
+      looped over. The caller must put the named axes last.
     - Needs to be read and enforced by the caller to be useful.
     """
 
