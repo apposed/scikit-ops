@@ -35,13 +35,20 @@ project called my-ops:
 
 ```
 my-ops/
-  envs/numpy_1x/pixi.toml       # ordinary pixi file: numpy<2, scikit-ops (pinned), ...
+  envs/numpy_1x/pixi.toml       # ordinary pixi file: numpy<2, my-ops, oprunner, ...
   src/my_ops/simulation.py      # @op(env="numpy_1x")
 ```
 
-Every environment needs the runner's worker side: for now, the `scikit-ops`
-package (pinned), until opspec and oprunner are published on their own. Only
-pixi is supported so far.
+Each environment installs the project itself, pinned to the same version, and
+`oprunner`, so the worker has the op's code and can run it:
+
+```toml
+[pypi-dependencies]
+my-ops = "==0.1.0"
+oprunner = ">=0.1.0.dev0"
+```
+
+Only pixi is supported so far.
 
 ### Tiling
 
