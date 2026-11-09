@@ -34,6 +34,7 @@ from . import _adapt, _codec, _tiling
 from .host import CALL as _CALL
 from .host import INIT as _INIT  # noqa: F401  (kept for out-of-process hosts)
 from .host import init_script as _init_script_for
+from .host import is_checkout
 
 if TYPE_CHECKING:
     from typing import Self
@@ -877,7 +878,14 @@ def _origin(module: str) -> dict | None:
     # pkg/sub/mod.py is pkg.sub.mod: up one folder per dotted part, and one
     # more for a package's __init__.py.
     depth = module.count(".") + (path.name == "__init__.py")
-    return {"root": str(path.parents[depth])}
+    root = path.parents[depth]
+    origin: dict = {"root": str(root)}
+    if not is_checkout(root):
+        # Installed: the worker's environment should have its own copy, and
+        # the host's site-packages holds packages built for the host's Python,
+        # so the worker only falls back to it, last on its path.
+        origin["append"] = True
+    return origin
 
 
 def run(fn: Callable, args: dict | None = None, **kwargs: Any) -> Any:

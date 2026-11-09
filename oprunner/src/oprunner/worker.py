@@ -78,8 +78,13 @@ def _import(module: str, origin: dict | None) -> Any:
     """Import the op's module, from where the host found it if need be."""
     root = (origin or {}).get("root")
     if root and root not in sys.path:
-        # In front, so the worker finds the same copy the host did.
-        sys.path.insert(0, root)
+        if (origin or {}).get("append"):
+            # The host's installed packages: last, so the worker uses its own
+            # environment's copy, and only falls back to the host's.
+            sys.path.append(root)
+        else:
+            # A checkout: in front, so the worker runs the code being edited.
+            sys.path.insert(0, root)
     return importlib.import_module(module)
 
 
