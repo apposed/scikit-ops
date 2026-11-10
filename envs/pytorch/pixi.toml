@@ -69,11 +69,9 @@ dinov3 = { git = "https://github.com/facebookresearch/dinov3" }
 instanseg-torch = "*"
 
 # Note: pinned deliberately -- this is part of the environment's identity,
-# so bumping it rebuilds every environment. A checkout still shadows it,
-# because skop.host.INIT puts src at sys.path[0]. See
-# docs/spec/fiji-front-end.md; it becomes an ordinary version constraint
-# once scikit-ops is released.
-scikit-ops = { git = "https://github.com/apposed/scikit-ops.git", rev = "00925fea3d92f3c974b7b1ec67d6633307d27bcc" }
+# so bumping it rebuilds every environment. It comes from PyPI, so building
+# needs no checkout; a checkout still shadows it (see oprunner.host.INIT).
+scikit-ops = "==0.1.0.dev2"
 
 [target.linux-64.dependencies]
 pytorch-gpu = "*"

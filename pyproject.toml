@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scikit-ops"
-version = "0.1.0.dev1"
+version = "0.1.0.dev2"
 description = "Appose-powered ops, and the machinery for running them."
 license = "BSD-2-Clause"
 authors = [{name = "scikit-ops developers"}]
@@ -33,16 +33,12 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
-    # The spec layer, from its own directory in this repo. A git URL so that
-    # `pip install git+https://github.com/apposed/scikit-ops` finds it: opspec
-    # is not on PyPI. PyPI refuses packages with URL dependencies, so this
-    # becomes "opspec>=..." when either one is published.
-    "opspec @ git+https://github.com/apposed/scikit-ops#subdirectory=opspec",
-    # Helpers for writing ops (boxes, masks, downloads), from ./ophelper.
-    "ophelper @ git+https://github.com/apposed/scikit-ops#subdirectory=ophelper",
-    # The runner, from ./oprunner. The ops don't need it to be called
-    # directly, but installing scikit-ops still gets everything, as before.
-    "oprunner @ git+https://github.com/apposed/scikit-ops#subdirectory=oprunner",
+    # The spec layer, the helpers for writing ops and the runner, each from its
+    # own folder in this repo and published separately. A checkout uses the
+    # folders themselves, through [tool.uv.sources] below.
+    "opspec==0.1.0.dev0",
+    "ophelper==0.1.0.dev0",
+    "oprunner==0.1.0.dev0",
 ]
 
 [dependency-groups]
@@ -110,10 +106,6 @@ documentation = "https://github.com/apposed/scikit-ops/blob/main/README.md"
 source = "https://github.com/apposed/scikit-ops"
 download = "https://pypi.org/project/scikit-ops"
 tracker = "https://github.com/apposed/appose/issues"
-
-[tool.hatch.metadata]
-# For the opspec git URL in dependencies.
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/skop"]
