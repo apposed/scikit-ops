@@ -51,6 +51,7 @@ load-bearing.
 | [0020](design/0020-reproducible-environments.md) | Committed locks, so a rebuild reproduces | no |
 | [0021](design/0021-op-collections.md) | Registering collections of ops, skop's own included | no |
 | [0022](design/0022-op-collections-built.md) | Ops from other packages: what is built, beside 0021 | part |
+| [0023](design/0023-yolo-training-op.md) | Training YOLO, after the Cellpose and StarDist ops, not JDLL | yes: `ops/train/yolo.py` |
 
 ## opspec
 

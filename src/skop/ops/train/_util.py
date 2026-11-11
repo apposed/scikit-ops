@@ -83,11 +83,20 @@ def continued_from(model_path, initial_model: str) -> bool:
 
 
 def write_history(
-    model_path, history, name: str, dataset_id: str, initial_model: str = ""
+    model_path,
+    history,
+    name: str,
+    dataset_id: str,
+    initial_model: str = "",
+    extra_columns: list[str] = (),
 ) -> str:
     """Write this run's epochs to ``<model file>_history.csv``. Columns match
     ``train_stardist2d``. Rewritten rather than appended: an older file has a
     shorter header, and wider rows read back wrong.
+
+    Each history row is ``(epoch, loss, val_loss, *extra)``, the extras
+    named by ``extra_columns`` and written after ``val_loss`` -- YOLO's
+    mAP, which a loss curve alone does not show.
 
     Kept epochs continue the old ones only when this run continued the old
     *weights* -- see ``continued_from``. Otherwise the previous history is
@@ -95,7 +104,8 @@ def write_history(
     keeping a curve for weights that no longer exist draws one training run
     as though it were the tail of another.
     """
-    columns = ["epoch", "loss", "val_loss", "run", "model", "dataset"]
+    extra_columns = list(extra_columns)
+    columns = ["epoch", "loss", "val_loss", *extra_columns, "run", "model", "dataset"]
     path = f"{model_path}_history.csv"
 
     previous = []
@@ -112,12 +122,13 @@ def write_history(
         writer.writeheader()
         for row in previous:
             writer.writerow({k: row.get(k, "") for k in columns})
-        for epoch, loss, val_loss in history:
+        for epoch, loss, val_loss, *extra in history:
             writer.writerow(
                 {
                     "epoch": done + epoch,
                     "loss": loss,
                     "val_loss": val_loss,
+                    **dict(zip(extra_columns, extra)),
                     "run": last_run + 1,
                     "model": name,
                     "dataset": dataset_id,

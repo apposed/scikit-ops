@@ -1249,3 +1249,62 @@ def test_smoothing_before_thresholding(runner):
     assert runner.run(otsu, image=noisy).max() > 5, "the test image was too easy"
     smoothed = runner.run(kuwahara, image=noisy, radius=3)
     assert runner.run(otsu, image=smoothed).max() == 1
+
+
+# Training a detector, checked the way the 2024 ladybug notebook checked it:
+# train and validate on the same image, so the right answer is to find
+# exactly what it was shown. It checks the wiring, not the learning.
+SQUARES = [(40, 50, 90, 110), (150, 200, 210, 250), (60, 240, 120, 300)]
+
+
+def squares_image(height: int = 256, width: int = 320) -> np.ndarray:
+    rng = np.random.default_rng(0)
+    image = rng.integers(0, 60, (height, width, 3)).astype(np.uint8)
+    for y0, x0, y1, x1 in SQUARES:
+        image[y0:y1, x0:x1] = (230, 200, 40)
+    return image
+
+
+@pytest.mark.env("pytorch")
+@pytest.mark.gpu
+def test_train_yolo_finds_what_it_was_shown(runner, tmp_path):
+    from skimage import io
+
+    from skop.ops.detect import yolo
+    from skop.ops.train import train_yolo
+
+    image = squares_image()
+    height, width = image.shape[:2]
+    io.imsave(tmp_path / "squares.png", image, check_contrast=False)
+    with open(tmp_path / "squares.txt", "w") as f:
+        f.writelines(
+            f"0 {(x0 + x1) / 2 / width} {(y0 + y1) / 2 / height} "
+            f"{(x1 - x0) / width} {(y1 - y0) / height}\n"
+            for y0, x0, y1, x1 in SQUARES
+        )
+    # 64 copies: ultralytics steps the optimiser every 64 images.
+    images = [str(tmp_path / "squares.png")] * 64
+    labels = [str(tmp_path / "squares.txt")] * 64
+
+    model = runner.run(
+        train_yolo,
+        images=images,
+        labels=labels,
+        model_dir=str(tmp_path / "models"),
+        name="squares",
+        initial_model="yolo11n.pt",
+        epochs=30,
+        imgsz=320,
+        val_size=0,
+        patience=0,
+    )
+    assert model == str(tmp_path / "models" / "squares.pt")
+    with open(model + "_history.csv") as f:
+        assert len(f.readlines()) == 30 + 1  # an epoch a row, and the header
+
+    # Whole image, at the 320 it was trained at, which yolo reads from it.
+    result = runner.run(yolo, image=image, weights=model)
+    check_boxes(result, image.shape)
+    found = result.boxes
+    for y0, x0, y1, x1 in SQUARES:
+        assert best_iou(np.array([y0, x0, y1, x1], float), found) > 0.7

@@ -34,7 +34,6 @@ uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py
 uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py em --levels 3 5 7
 uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py aerial
 uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py aerial --op fastsam
-uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py aerial --op jdll_yolo
 uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py --cap 3G
 uv run docs/design/0017-memory-and-tiled-processing/yolo-napari.py aerial \\
     --boxes test_images/yolo-aerial-L4-fastsam-tile0.npy
@@ -60,7 +59,7 @@ parser.add_argument("--levels", type=int, nargs="+", help="default em 4, aerial 
 parser.add_argument(
     "--op",
     default="yolo",
-    choices=["yolo", "fastsam", "jdll_yolo"],
+    choices=["yolo", "fastsam"],
     help="op to have selected in the panel",
 )
 parser.add_argument(
@@ -70,7 +69,7 @@ parser.add_argument(
     help="yolo's object_size, an area in pixels squared",
 )
 parser.add_argument(
-    "--weights", type=Path, default=WEIGHTS, help="jdll_yolo's model, filled in"
+    "--weights", type=Path, default=WEIGHTS, help="yolo's model, filled in"
 )
 parser.add_argument(
     "--boxes", type=Path, nargs="*", default=[], help=".npy files from yolo-run.py"
@@ -136,7 +135,7 @@ for f in args.boxes:
 
 panel = OpsPanel(viewer)
 # Labels are "detect: yolo"; match the op's name exactly, since "yolo" is
-# also in "jdll_yolo".
+# also in "object_aware_yolo".
 picks = [c for c in panel._picker.choices if c.split(": ")[-1] == args.op]
 if picks:
     panel._picker.value = picks[0]

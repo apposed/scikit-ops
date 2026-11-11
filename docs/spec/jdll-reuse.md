@@ -1,6 +1,16 @@
 # What JDLL has that skop could reuse
 
-Status: notes, running. Nothing here is built.
+Status: notes, running. YOLO training is built, after the skop trainers
+rather than JDLL's script: [0023](../design/0023-yolo-training-op.md).
+
+Found since, in JDLL's `main` (2026-11): `src/main/resources/python/yolo_data.py`
+is real Python -- a custom ultralytics trainer and dataset that read TIFF and
+16-bit images and min/max-normalise them, the normalisation saved with the
+model -- and the training call now passes `trainer=` from it, which the
+reading copy below predates. OOM retry is in `YoloTrainingService.java`, on
+the Java side; ultralytics 8.4 now does it in the first epoch by itself.
+`YoloDatasetPreparer.java` reuses a YOLO folder or builds one from masks by
+cropping around objects and tiling dense areas at `imgsz`.
 
 [JDLL](../../../JDLL) (`../JDLL`, sibling checkout) is the Java deep-learning
 library behind deepImageJ. It already drives Python through Appose, so the

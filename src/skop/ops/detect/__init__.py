@@ -13,16 +13,19 @@ One op per environment, since ``@op(env=...)`` is fixed per function:
 of its own, because segment-everything vendors an ultralytics fork that must
 not meet the real one.
 
-``yolo`` runs a user's detection checkpoint on overlapping tiles, returning
-boxes, confidences and class IDs. It shares the 'pytorch' environment.
+``yolo`` is the main one: any trained YOLO checkpoint -- a stock COCO model
+or one from ``skop.ops.train.train_yolo`` -- on the whole image, or on
+overlapping tiles when objects are small, returning boxes, confidences and
+class IDs. It shares the 'pytorch' environment. ``fastsam`` and
+``object_aware_yolo`` are the special ones, each with its own fixed model.
+(``jdll_yolo``, a port of JDLL's YOLO inference, was retired for it.)
 """
 
 from __future__ import annotations
 
 from ._result import Boxes, Detections
 from .fastsam import fastsam
-from .jdll_yolo import jdll_yolo
 from .object_aware_yolo import object_aware_yolo
 from .yolo import yolo
 
-__all__ = ["Boxes", "Detections", "fastsam", "jdll_yolo", "object_aware_yolo", "yolo"]
+__all__ = ["Boxes", "Detections", "fastsam", "object_aware_yolo", "yolo"]

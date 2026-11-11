@@ -31,7 +31,7 @@ built on first use.
 
 uv run docs/design/0017-memory-and-tiled-processing/yolo-run.py aerial --level 4
 uv run docs/design/0017-memory-and-tiled-processing/yolo-run.py aerial --level 2 --tile 1024
-uv run docs/design/0017-memory-and-tiled-processing/yolo-run.py em --level 5 --op jdll_yolo
+uv run docs/design/0017-memory-and-tiled-processing/yolo-run.py em --level 5 --op yolo
 """
 
 import argparse
@@ -42,21 +42,21 @@ import numpy as np
 from yolo_data import IMAGES, open_levels
 
 import oprunner
-from skop.ops.detect import fastsam, jdll_yolo
+from skop.ops.detect import fastsam, yolo
 
 WEIGHTS = Path(__file__).resolve().parents[4] / "i2k-2026" / "models" / "yolo26n.pt"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("name", nargs="?", default="em", choices=["em", "aerial"])
 parser.add_argument("--level", type=int, help="pyramid level; default em 5, aerial 4")
-parser.add_argument("--op", choices=["fastsam", "jdll_yolo"], default="fastsam")
+parser.add_argument("--op", choices=["fastsam", "yolo"], default="fastsam")
 parser.add_argument(
     "--tile", type=int, default=0, help="tile side in pixels; 0 = whole level"
 )
 parser.add_argument("--overlap", type=float, default=0.15)
 parser.add_argument("--imgsz", type=int, help="op default if not given")
 parser.add_argument("--conf", type=float, help="op default if not given")
-parser.add_argument("--weights", type=Path, default=WEIGHTS, help="jdll_yolo only")
+parser.add_argument("--weights", type=Path, default=WEIGHTS, help="yolo only")
 args = parser.parse_args()
 
 levels = open_levels(args.name)
@@ -64,11 +64,14 @@ level = args.level if args.level is not None else {"em": 5, "aerial": 4}[args.na
 image = np.asarray(levels[level])
 print(f"{args.name} level {level}: {image.shape} {image.dtype}")
 
-fn = {"fastsam": fastsam, "jdll_yolo": jdll_yolo}[args.op]
+fn = {"fastsam": fastsam, "yolo": yolo}[args.op]
 params = {
     k: v for k, v in (("imgsz", args.imgsz), ("conf", args.conf)) if v is not None
 }
-if args.op == "jdll_yolo":
+if args.op == "yolo":
+    # yolo runs at the size its model was trained at, and tiles itself
+    # when given object_size; this script does the tiling, so neither.
+    params.pop("imgsz", None)
     params["weights"] = args.weights
 
 

@@ -101,6 +101,6 @@ Everything for this design lives in this directory, until it is built:
 | [yolo-sam-tiling.md](yolo-sam-tiling.md) | Background for case 4: tiling detectors and SAM to match `imgsz` |
 | `yolo_data.py` | Where the two big 2D images live; imported by the `yolo-*.py` scripts |
 | `yolo-download.py` | Makes `test_images/yolo-{em,aerial}.zarr`, one 2D array per level |
-| `yolo-run.py` | FastSAM or JDLL YOLO on one level, whole or tiled; box counts and sizes |
+| `yolo-run.py` | FastSAM or YOLO on one level, whole or tiled; box counts and sizes |
 | `yolo-napari.py` | Several levels as aligned layers, with the skop panel on YOLO |
 
