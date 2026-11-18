@@ -8,6 +8,7 @@ living in the op's declared environment.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import contextvars
 import functools
@@ -16,6 +17,8 @@ import itertools
 import json
 import re
 import sys
+import threading
+import weakref
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -150,6 +153,32 @@ def _default_envs_dir(root: Path) -> Path | None:
     return checkout if checkout.is_dir() else None
 
 
+#: Every Runner not yet garbage-collected, so their workers can be closed at
+#: interpreter exit.
+_live_runners: weakref.WeakSet = weakref.WeakSet()
+
+
+def _close_live_runners() -> None:
+    for runner in list(_live_runners):
+        with contextlib.suppress(Exception):
+            runner.close()
+
+
+# A worker lives until its stdin closes, and Appose watches each one with
+# three non-daemon threads (stdout, stderr, process monitor) that end only
+# when it does. A runner left open -- a script that never calls close(), or
+# a GUI's one shared runner -- therefore kept Python from exiting: shutdown
+# waits on non-daemon threads, forever. atexit runs too late for this, after
+# that wait; threading's own hook runs before it, and is what
+# concurrent.futures uses for the same reason. It is private, so atexit is
+# the fallback, which at least closes workers for anyone whose threads are
+# already gone.
+if hasattr(threading, "_register_atexit"):
+    threading._register_atexit(_close_live_runners)
+else:  # pragma: no cover
+    atexit.register(_close_live_runners)
+
+
 class Runner:
     """Builds environments, keeps workers warm, and dispatches op calls."""
 
@@ -169,6 +198,7 @@ class Runner:
         self._build_progress: list[Callable[[str, int, int], None]] = []
         self._build_output: list[Callable[[str], None]] = []
         self._build_error: list[Callable[[str], None]] = []
+        _live_runners.add(self)
 
     # -- build reporting -------------------------------------------------
 
