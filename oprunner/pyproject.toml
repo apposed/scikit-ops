@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oprunner"
-version = "0.1.0.dev0"
+version = "0.1.0.dev1"
 description = "Run image-processing ops in their own environments, with Appose."
 license = "BSD-2-Clause"
 authors = [{name = "scikit-ops developers"}]
