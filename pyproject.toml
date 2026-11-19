@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scikit-ops"
-version = "0.1.0.dev2"
+version = "0.1.0.dev3"
 description = "Appose-powered ops, and the machinery for running them."
 license = "BSD-2-Clause"
 authors = [{name = "scikit-ops developers"}]
@@ -38,7 +38,7 @@ dependencies = [
     # folders themselves, through [tool.uv.sources] below.
     "opspec==0.1.0.dev0",
     "ophelper==0.1.0.dev0",
-    "oprunner==0.1.0.dev0",
+    "oprunner==0.1.0.dev1",
 ]
 
 [dependency-groups]
