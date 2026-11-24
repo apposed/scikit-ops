@@ -75,5 +75,8 @@ package in this repository, with its own design notes:
 | [form-adaptation.md](spec/form-adaptation.md) | Calling a computer op as a function, and back |
 | [front-ends.md](spec/front-ends.md) | What a second front end (Fiji) needs from here |
 | [fiji-front-end.md](spec/fiji-front-end.md) | What that front end looks like: one command per op, Java as the host |
+| [jdll-reuse.md](spec/jdll-reuse.md) | Running notes on what JDLL's Appose Python could give us |
 | [workflow-ops.md](spec/workflow-ops.md) | Ops built out of other ops, and what two real workflows need |
 | [per-object-features.md](spec/per-object-features.md) | How a value per detected object should travel |
+| [fiji-collections.md](spec/fiji-collections.md) | More than one op collection in Fiji (proposed) |
+| [multiscale.md](spec/multiscale.md) | Multiscale data as an Array of its current level (proposed) |
