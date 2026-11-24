@@ -225,6 +225,16 @@ class Runner:
         """Hear the build tool's standard output, in raw chunks."""
         self._build_output.append(subscriber)
 
+    def _say(self, message: str) -> None:
+        """One line of the runner's own build news, where build output goes."""
+        if not self._build_output:
+            print(message, flush=True)
+        for subscriber in self._build_output:
+            try:
+                subscriber(message + "\n")
+            except Exception:  # noqa: BLE001 - a listener must not stop a build
+                pass
+
     def subscribe_build_error(self, subscriber: Callable[[str], None]) -> None:
         """Hear the build tool's standard error, in raw chunks.
 
@@ -383,6 +393,12 @@ class Runner:
         key = (env.config, variant)
         if key in self._envs:
             return self._envs[key]
+
+        if not _is_built(env):
+            # About to install: make sure appose's pixi can. See _pixi.
+            from ._pixi import ensure_recent_pixi
+
+            ensure_recent_pixi(self._say)
 
         builder = appose.pixi(env.config).name(env.name)
         for progress_subscriber in self._build_progress:
@@ -848,6 +864,21 @@ class Env:
             from appose.util.environment import appose_envs_dir
 
         return Path(appose_envs_dir()) / self.name
+
+
+def _is_built(env: Env) -> bool:
+    """Whether *env* is built from its current file, so appose installs nothing.
+
+    The comparison ``Runner.environment_status`` makes, for any ``Env``.
+    """
+    import json
+
+    record = env.folder / "appose.json"
+    try:
+        built = json.loads(record.read_text()).get("content", "")
+        return built.strip() == env.config.read_text().strip()
+    except (OSError, ValueError):
+        return False
 
 
 def _package_name(module: str, root: Path) -> str:
