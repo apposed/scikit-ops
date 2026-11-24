@@ -4204,7 +4204,7 @@ data = [
 
 [[package]]
 name = "scikit-ops"
-version = "0.1.0.dev5"
+version = "0.1.0.dev6"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
