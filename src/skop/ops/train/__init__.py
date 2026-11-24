@@ -21,12 +21,14 @@ import numpy as np
 
 from .cellpose4 import train_cellpose4
 from .cellpose3 import train_cellpose3
+from .microsam import train_microsam
 from .stardist2d import receptive_field_stardist2d, train_stardist2d
 from .yolo import train_yolo
 
 __all__ = [
     "train_cellpose4",
     "train_cellpose3",
+    "train_microsam",
     "train_stardist2d",
     "train_yolo",
     "receptive_field_stardist2d",

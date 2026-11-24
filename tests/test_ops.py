@@ -347,3 +347,27 @@ def test_footprint_shapes_are_offered_as_a_choice():
         shape = next(p for p in BY_NAME[name].params if p.name == "shape")
         assert shape.type is Footprint
         assert [m.value for m in shape.type] == ["ball", "box", "diamond"]
+
+
+MICROSAM_OPS = (
+    "skop.ops.segment.microsam:microsam",
+    "skop.ops.train.microsam:train_microsam",
+    "skop.ops.prompt.microsam:microsam_embed",
+    "skop.ops.prompt.microsam:microsam_points",
+)
+
+
+@pytest.mark.parametrize("name", MICROSAM_OPS)
+def test_microsam_ops_share_the_pytorch_environment(name):
+    # Beside microsam_masks, so one micro_sam install and one model cache
+    # serve automatic, prompted and box-prompted segmentation and training.
+    assert BY_NAME[name].env == "pytorch"
+
+
+def test_microsam_outputs():
+    from opspec.op import Role
+
+    assert BY_NAME["skop.ops.segment.microsam:microsam"].outputs[0].role is Role.labels
+    points = BY_NAME["skop.ops.prompt.microsam:microsam_points"]
+    assert {p.name: p.role for p in points.params}["points"] is Role.points
+    assert points.outputs[0].role is Role.labels

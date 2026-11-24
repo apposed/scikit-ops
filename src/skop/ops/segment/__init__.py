@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from .cellpose4 import cellpose4
 from .cellpose3 import cellpose3
+from .microsam import microsam
 from .stardist2d import stardist2d_fluo, stardist2d_he
 from .starfun3d import segment_nuclei
 from .unseg import unseg
@@ -17,6 +18,7 @@ from .unseg import unseg
 __all__ = [
     "cellpose4",
     "cellpose3",
+    "microsam",
     "segment_nuclei",
     "stardist2d_fluo",
     "stardist2d_he",
