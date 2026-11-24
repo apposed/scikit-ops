@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scikit-ops"
-version = "0.1.0.dev4"
+version = "0.1.0.dev5"
 description = "Appose-powered ops, and the machinery for running them."
 license = "BSD-2-Clause"
 authors = [{name = "scikit-ops developers"}]
