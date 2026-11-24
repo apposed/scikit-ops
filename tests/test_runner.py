@@ -351,3 +351,94 @@ def test_a_workflow_s_run_goes_through_the_runner(tmp_path):
         # counts ran in its environment, so the runner started a worker.
         assert any(key[0] == "skimage" for key in runner._services)
     assert "Step 3 of 3" in _messages(events)
+
+
+class _ScriptedBuilder:
+    """A stand-in for appose's builder that 'prints' and then succeeds or
+    fails, as pixi would."""
+
+    def __init__(self, out: str, err: str, fail: bool):
+        self.out, self.err, self.fail = out, err, fail
+        self.outs, self.errs = [], []
+
+    def name(self, _env_name):
+        return self
+
+    def subscribe_progress(self, _sub):
+        return self
+
+    def subscribe_output(self, sub):
+        self.outs.append(sub)
+        return self
+
+    def subscribe_error(self, sub):
+        self.errs.append(sub)
+        return self
+
+    def build(self):
+        for sub in self.outs:
+            sub(self.out)
+        for sub in self.errs:
+            sub(self.err)
+        if self.fail:
+            raise RuntimeError("pixi build failed")
+        return "an environment"
+
+
+@pytest.fixture
+def scratch_envs(tmp_path, monkeypatch):
+    """Builds land in an empty appose directory, and pixi is left alone."""
+    import oprunner._pixi
+
+    monkeypatch.setenv("APPOSE_ENVS_DIR", str(tmp_path))
+    monkeypatch.setattr(oprunner._pixi, "ensure_recent_pixi", lambda report: None)
+    return tmp_path
+
+
+def test_a_build_writes_its_log(scratch_envs, monkeypatch):
+    import appose
+
+    builder = _ScriptedBuilder("Solving\n", "✔ The default environment has been installed.\n", False)
+    monkeypatch.setattr(appose, "pixi", lambda _config: builder)
+    r = oprunner.Runner()
+    env = r._own_env("minimal")
+    assert env.status == "missing"
+
+    assert r.build(env) == "an environment"
+    text = env.log.read_text(encoding="utf-8")
+    assert env.log.parent == scratch_envs
+    assert "Solving" in text and "has been installed" in text
+    assert text.rstrip().endswith("# OK")
+
+
+def test_a_failed_build_says_what_pixi_said(scratch_envs, monkeypatch):
+    import appose
+
+    from oprunner.runner import BuildFailed
+
+    err = (
+        "DEBUG resolving 1\nDEBUG resolving 2\n"
+        "Error:   × failed to solve the pypi requirements of environment 'default'\n"
+        "  ╰─▶ no version of scikit-ops==9.9\n"
+    )
+    monkeypatch.setattr(appose, "pixi", lambda _config: _ScriptedBuilder("", err, True))
+    r = oprunner.Runner()
+    env = r._own_env("minimal")
+
+    with pytest.raises(BuildFailed) as caught:
+        r.build(env)
+    message = str(caught.value)
+    assert "failed to solve" in message and "no version of scikit-ops" in message
+    assert "DEBUG resolving 1" not in message  # the error, not the debug log
+    assert str(env.log) in message
+    assert "# FAILED" in env.log.read_text(encoding="utf-8")
+
+
+def test_collection_envs_lists_skops_recipes_as_its_ops_name_them():
+    r = oprunner.Runner()
+    envs = {e.id: e for e in r.collection_envs("skop")}
+    assert {"minimal", "pytorch", "stardist-tf"} <= envs.keys()
+    from skop.ops.segment import cellpose4
+
+    assert envs["pytorch"] == r.env_for(cellpose4)
+    assert r.collection_envs("no_such_package_here") == []

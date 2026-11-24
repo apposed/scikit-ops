@@ -383,6 +383,39 @@ class Runner:
                     return Env(env_id, config, _package_name(module, folder))
         return self._own_env(env_id)
 
+    def collection_envs(self, module: str) -> list[Env]:
+        """Every environment the op collection *module* brings, e.g. "skop".
+
+        The ``envs/*/pixi.toml`` beside the module, found as ``env_for``
+        finds one op's -- each named and placed as its ops' would be. For a
+        front end listing what could be built. Empty for a module that is
+        not importable or brings none.
+        """
+        import importlib
+
+        try:
+            found = importlib.import_module(module).__file__
+        except ImportError:
+            return []
+        if found is None:
+            return []
+        for folder in Path(found).resolve().parents:
+            envs = folder / "envs"
+            if envs.is_dir() and any(envs.glob("*/pixi.toml")):
+                return [
+                    self._env_for(config.parent.name, module)
+                    for config in sorted(envs.glob("*/pixi.toml"))
+                ]
+        return []
+
+    def build(self, env: Env, variant: str | None = None) -> Any:
+        """Build *env* now, rather than on first use. A no-op once built.
+
+        The same build a first ``run`` would do, reported to the same
+        subscribers; a failure raises BuildFailed.
+        """
+        return self._build(env, variant)
+
     def _own_env(self, env_id: str) -> Env:
         """One of this runner's own environments, from its ``envs_dir``."""
         config = self.env_config(env_id)
@@ -394,7 +427,8 @@ class Runner:
         if key in self._envs:
             return self._envs[key]
 
-        if not _is_built(env):
+        installing = not _is_built(env)
+        if installing:
             # About to install: make sure appose's pixi can. See _pixi.
             from ._pixi import ensure_recent_pixi
 
@@ -409,7 +443,10 @@ class Runner:
             builder = builder.subscribe_error(error_subscriber)
         if self.debug:
             builder = builder.log_debug()
-        built = builder.build()
+        if installing:
+            built = _logged_build(env, builder)
+        else:
+            built = builder.build()
 
         if variant is not None:
             # Named pixi sub-environments (features) require appose >= 0.12.
@@ -864,6 +901,93 @@ class Env:
             from appose.util.environment import appose_envs_dir
 
         return Path(appose_envs_dir()) / self.name
+
+    @property
+    def log(self) -> Path:
+        """The last build's log: pixi's whole output, and how it ended.
+
+        Beside the environment rather than in it, so a build that fails
+        before the folder exists, or one deleted to start over, still has
+        one.
+        """
+        return self.folder.parent / f"{self.name}.build.log"
+
+    @property
+    def status(self) -> str:
+        """``"ready"``, ``"stale"`` (built from an older recipe) or
+        ``"missing"``. Reads two files; builds nothing."""
+        if not (self.folder / "appose.json").exists():
+            return "missing"
+        return "ready" if _is_built(self) else "stale"
+
+
+class BuildFailed(RuntimeError):
+    """An environment build failed. The message carries pixi's own error
+    lines, and ``log`` is the file holding everything it wrote."""
+
+    def __init__(self, env: Env, cause: BaseException, tail: list[str]):
+        self.env = env
+        self.log = env.log
+        lines = "\n".join(tail) or "(pixi wrote nothing)"
+        super().__init__(
+            f"Building the '{env.name}' environment failed: {cause}\n"
+            f"{lines}\nFull log: {env.log}"
+        )
+
+
+#: Lines of pixi's output kept for BuildFailed's message.
+_TAIL = 25
+
+
+def _error_lines(text: str) -> list[str]:
+    """The part of a failed build's output that says why.
+
+    With a progress subscriber, pixi runs under ``-vv`` and its debug log
+    swamps the error, so prefer what follows pixi's own error marker
+    (``Error:`` or ``×``); without one, the last lines.
+    """
+    # Not the "# ..." lines _logged_build adds around pixi's own.
+    lines = [
+        line.rstrip()
+        for line in text.splitlines()
+        if line.strip() and not line.startswith("# ")
+    ]
+    for k in range(len(lines) - 1, -1, -1):
+        stripped = lines[k].lstrip()
+        if stripped.startswith(("Error:", "error:", "×")):
+            return lines[k : k + _TAIL]
+    return lines[-_TAIL:]
+
+
+def _logged_build(env: Env, builder: Any) -> Any:
+    """``builder.build()``, writing everything pixi says to ``env.log``.
+
+    A failure raises BuildFailed, which says what pixi said, rather than
+    appose's bare "pixi build failed".
+    """
+    import datetime
+
+    lock = threading.Lock()
+    env.log.parent.mkdir(parents=True, exist_ok=True)
+    with open(env.log, "w", encoding="utf-8", errors="replace") as log:
+
+        def write(chunk: str) -> None:
+            with lock:
+                log.write(chunk)
+                log.flush()
+
+        stamp = datetime.datetime.now().isoformat(timespec="seconds")
+        write(f"# {stamp} building {env.name}\n# recipe: {env.config}\n\n")
+        builder = builder.subscribe_output(write).subscribe_error(write)
+        try:
+            built = builder.build()
+        except Exception as e:
+            write(f"\n# FAILED: {e}\n")
+            log.flush()
+            text = env.log.read_text(encoding="utf-8", errors="replace")
+            raise BuildFailed(env, e, _error_lines(text)) from e
+        write("\n# OK\n")
+    return built
 
 
 def _is_built(env: Env) -> bool:
