@@ -44,7 +44,9 @@ ultralytics = ">=8.3"
 #
 # It also carries `zarr <3` and `xarray <2025.3` -- worth knowing when the next
 # occupant fails to solve.
-micro_sam = ">=1.6"
+# Below 2: the ops here were written and tested on 1.8. 2.0 is a major
+# version; lift this once they have been run against it.
+micro_sam = ">=1.6,<2"
 
 # NB: torchvision is required explicitly even though nothing here imports it
 # directly. conda's ultralytics does not depend on it, but reads
@@ -71,7 +73,7 @@ instanseg-torch = "*"
 # Note: pinned deliberately -- this is part of the environment's identity,
 # so bumping it rebuilds every environment. It comes from PyPI, so building
 # needs no checkout; a checkout still shadows it (see oprunner.host.INIT).
-scikit-ops = "==0.1.0.dev2"
+scikit-ops = "==0.1.0.dev5"
 
 [target.linux-64.dependencies]
 pytorch-gpu = "*"
