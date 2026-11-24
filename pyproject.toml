@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scikit-ops"
-version = "0.1.0.dev3"
+version = "0.1.0.dev4"
 description = "Appose-powered ops, and the machinery for running them."
 license = "BSD-2-Clause"
 authors = [{name = "scikit-ops developers"}]
@@ -35,10 +35,11 @@ dependencies = [
     "numpy",
     # The spec layer, the helpers for writing ops and the runner, each from its
     # own folder in this repo and published separately. A checkout uses the
-    # folders themselves, through [tool.uv.sources] below.
-    "opspec==0.1.0.dev0",
-    "ophelper==0.1.0.dev0",
-    "oprunner==0.1.0.dev1",
+    # folders themselves, through [tool.uv.sources] below. Ranges, so a fix
+    # to one of them is released on its own, without a scikit-ops release.
+    "opspec>=0.1.0.dev0,<0.2",
+    "ophelper>=0.1.0.dev0,<0.2",
+    "oprunner>=0.1.0.dev2,<0.2",
 ]
 
 [dependency-groups]
