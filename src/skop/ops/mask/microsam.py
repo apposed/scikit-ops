@@ -82,8 +82,11 @@ def microsam_masks(
     if len(prompts) == 0:
         return Masks(ophelper.masks.empty(image.shape[:2]), ophelper.boxes.EMPTY.copy())
 
-    from micro_sam.prompt_based_segmentation import segment_from_box
-    from micro_sam.util import get_sam_model, precompute_image_embeddings
+    from .._microsam import sam1
+
+    segment_from_box = sam1("prompt_based_segmentation").segment_from_box
+    get_sam_model = sam1("util").get_sam_model
+    precompute_image_embeddings = sam1("util").precompute_image_embeddings
 
     progress(f"Loading {model.value}")
     predictor = get_sam_model(model_type=model.value)

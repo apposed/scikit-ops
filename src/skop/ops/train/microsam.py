@@ -131,8 +131,11 @@ def train_microsam(
 
     import imageio.v3 as iio
     import torch
-    from micro_sam import training as sam_training
     from torch_em.data import MinInstanceSampler
+
+    from .._microsam import sam1
+
+    sam_training = sam1("training")
 
     if len(images) != len(labels) or not images:
         raise ValueError(

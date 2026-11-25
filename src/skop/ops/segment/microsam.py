@@ -53,9 +53,11 @@ def _predictor_and_segmenter(model: str, checkpoint: str, tiled: bool):
     mtime = Path(checkpoint).stat().st_mtime if checkpoint else None
     key = (model, checkpoint, mtime, tiled)
     if key not in _loaded:
-        from micro_sam.automatic_segmentation import (
-            get_predictor_and_segmenter,
-        )
+        from .._microsam import sam1
+
+        get_predictor_and_segmenter = sam1(
+            "automatic_segmentation"
+        ).get_predictor_and_segmenter
 
         _loaded.clear()
         progress(f"Loading micro_sam {checkpoint or model}")
@@ -103,9 +105,11 @@ def microsam(
         model = checkpoint_model_type(checkpoint, model)
     predictor, segmenter = _predictor_and_segmenter(model, checkpoint, tile)
 
-    from micro_sam.automatic_segmentation import (
-        automatic_instance_segmentation,
-    )
+    from .._microsam import sam1
+
+    automatic_instance_segmentation = sam1(
+        "automatic_segmentation"
+    ).automatic_instance_segmentation
 
     progress("Segmenting")
     labels = automatic_instance_segmentation(

@@ -46,7 +46,9 @@ _embeddings: OrderedDict = OrderedDict()
 
 def _get_predictor(model_type: str):
     if model_type not in _predictor:
-        from micro_sam.util import get_sam_model
+        from .._microsam import sam1
+
+        get_sam_model = sam1("util").get_sam_model
 
         _predictor.clear()
         progress(f"Loading micro_sam model {model_type}")
@@ -62,7 +64,9 @@ def _get_embeddings(image, embedding_path: str, model_type: str, ndim: int):
         _embeddings.move_to_end(key)
         return held[1]
 
-    from micro_sam.util import precompute_image_embeddings
+    from .._microsam import sam1
+
+    precompute_image_embeddings = sam1("util").precompute_image_embeddings
 
     predictor = _get_predictor(model_type)
     progress("Computing or loading image embeddings")
@@ -149,7 +153,9 @@ def microsam_points(
     if len(points) == 0:
         return np.zeros(spatial, dtype=np.uint8)
 
-    from micro_sam.prompt_based_segmentation import segment_from_points
+    from .._microsam import sam1
+
+    segment_from_points = sam1("prompt_based_segmentation").segment_from_points
 
     predictor = _get_predictor(model_type)
     embeddings = _get_embeddings(image, embedding_path, model_type, ndim)
@@ -175,9 +181,9 @@ def microsam_points(
     if not volume or not plane.any():
         return seg
 
-    from micro_sam.multi_dimensional_segmentation import (
-        segment_mask_in_volume,
-    )
+    segment_mask_in_volume = sam1(
+        "multi_dimensional_segmentation"
+    ).segment_mask_in_volume
 
     progress("Carrying the object through z")
     seg, _ = segment_mask_in_volume(

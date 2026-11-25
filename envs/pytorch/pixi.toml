@@ -20,8 +20,10 @@ version = "0.1.0"
 # Cellpose 4 replaced the v3 model zoo and moved the API with it, so the two
 # cannot share an environment at any version pin.
 
+# 12.9: micro_sam 2 needs sam-2, whose GPU builds all want CUDA 12.8 (Windows)
+# or 12.9 (Linux) or newer. So this needs an NVIDIA driver from mid-2025 on.
 [system-requirements]
-cuda = "12.0"
+cuda = "12.9"
 
 [dependencies]
 python = "3.11.*"
@@ -35,18 +37,17 @@ ultralytics = ">=8.3"
 # unsatisfiable. So this goes back to `appose = ">=0.12"` above as soon as
 # the rev below is bumped past that change and conda-forge carries 0.12.
 
-# NB: micro_sam depends on `napari >=0.5,<0.6` and `pyqt` outright -- it ships
-# a napari plugin and does not split it out. So this environment installs a GUI
-# stack that nothing in it imports; the ops use micro_sam.util and
-# micro_sam.prompt_based_segmentation, neither of which touches napari. Heavy
-# but harmless: a worker process never opens a window, and 0002's whole point
-# is that this napari pin cannot reach the front end's.
+# NB: micro_sam depends on `napari >=0.7.1,<0.11` and `pyqt6` outright -- it
+# ships a napari plugin and does not split it out. So this environment installs
+# a GUI stack that nothing in it imports; the ops use micro_sam's model and
+# prompt functions, none of which touches napari. Heavy but harmless: a worker
+# process never opens a window, and 0002's whole point is that this napari pin
+# cannot reach the front end's.
 #
-# It also carries `zarr <3` and `xarray <2025.3` -- worth knowing when the next
-# occupant fails to solve.
-# Below 2: the ops here were written and tested on 1.8. 2.0 is a major
-# version; lift this once they have been run against it.
-micro_sam = ">=1.6,<2"
+# 2.x carries both families: SAM2 (`hvit_*` models) at the top and SAM1
+# (`vit_*`) under micro_sam.v1, where skop.ops._microsam finds it. It also
+# needs `zarr >=3` -- worth knowing when the next occupant fails to solve.
+micro_sam = ">=2"
 
 # NB: torchvision is required explicitly even though nothing here imports it
 # directly. conda's ultralytics does not depend on it, but reads
@@ -78,7 +79,7 @@ scikit-ops = "==0.1.0.dev5"
 [target.linux-64.dependencies]
 pytorch-gpu = "*"
 cudnn = "*"
-cuda-version = "12.2"
+cuda-version = "12.9.*"
 
 [target.win-64.dependencies]
 pytorch-gpu = "*"
