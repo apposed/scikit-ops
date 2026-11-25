@@ -13,7 +13,7 @@ say so. ``ophelper.masks`` holds the projections onto something a viewer shows.
 
 Every op here shares a signature and returns ``Masks``, so they are
 substitutable. One op per environment, since ``@op(env=...)`` is fixed per
-function: ``microsam_masks`` in the shared 'pytorch' environment, because
+function: ``microsam_masks`` and ``microsam2_masks`` in the shared 'pytorch' environment, because
 micro_sam is a conda package that coexists with every other torch library
 there, and ``mobilesam_masks`` in segment-everything's own, alongside the
 object-aware detector it was trained to pair with and inside the vendored
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from ._result import Masks
 from .microsam import microsam_masks
+from .microsam2 import microsam2_masks
 from .mobilesam import mobilesam_masks
 
-__all__ = ["Masks", "microsam_masks", "mobilesam_masks"]
+__all__ = ["Masks", "microsam2_masks", "microsam_masks", "mobilesam_masks"]

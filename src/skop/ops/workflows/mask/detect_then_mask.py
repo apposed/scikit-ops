@@ -2,8 +2,8 @@
 
 The two-stage segmenter from docs/spec/workflow-ops.md, and the reason the
 detectors and mask detectors were built to share signatures in the first
-place. Any of the two detectors pairs with either of the two mask detectors,
-which is four segmenters from four ops -- and the point of the pairing is that
+place. Any of the three detectors pairs with any of the three mask detectors,
+which is nine segmenters from six ops -- and the point of the pairing is that
 they are genuinely different: the object-aware YOLO finds objects a
 photograph-trained SAM misses, and micro_sam draws cells that MobileSAM
 smears.
@@ -31,7 +31,9 @@ from opspec.runtime import progress, run
 from opspec.types import BoxesOf, ImageOf, MasksOf
 from skop.ops.detect.fastsam import fastsam
 from skop.ops.detect.object_aware_yolo import object_aware_yolo
+from skop.ops.detect.yolo import yolo
 from skop.ops.mask.microsam import microsam_masks
+from skop.ops.mask.microsam2 import microsam2_masks
 from skop.ops.mask.mobilesam import mobilesam_masks
 
 
@@ -58,12 +60,16 @@ def detect_then_mask(
     image: ImageOf[np.ndarray],
     detector: Annotated[
         Callable,
-        Choices(object_aware_yolo=object_aware_yolo, fastsam=fastsam),
+        Choices(object_aware_yolo=object_aware_yolo, fastsam=fastsam, yolo=yolo),
     ] = object_aware_yolo,
     detector_args: Annotated[dict | None, ParamsFor("detector", binds="image")] = None,
     masker: Annotated[
         Callable,
-        Choices(mobilesam=mobilesam_masks, microsam=microsam_masks),
+        Choices(
+            mobilesam=mobilesam_masks,
+            microsam=microsam_masks,
+            microsam2=microsam2_masks,
+        ),
     ] = mobilesam_masks,
     masker_args: Annotated[
         dict | None, ParamsFor("masker", binds=("image", "boxes"))
@@ -74,10 +80,12 @@ def detect_then_mask(
     Args:
         image: The image to segment.
         detector: Which op finds the bounding boxes. ``object_aware_yolo`` was
-            trained on microscopy; ``fastsam`` is a general detector.
+            trained on microscopy; ``fastsam`` is a general detector;
+            ``yolo`` runs your own YOLO .pt checkpoint, tiled.
         detector_args: Settings for the chosen detector, minus the image.
         masker: Which op draws a mask inside each box. ``microsam`` is
-            finetuned for microscopy and slower; ``mobilesam`` is the one the
+            finetuned for microscopy and slower; ``microsam2`` is its SAM2
+            successor, finetuned or plain; ``mobilesam`` is the one the
             object-aware detector was trained to pair with.
         masker_args: Settings for the chosen mask detector, minus the image
             and the boxes, which this workflow supplies.
